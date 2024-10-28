@@ -1,3 +1,5 @@
+const isElectron = window && window.process && window.process.type;
+
 import './functions/common'
 import './functions/web'
 
@@ -26,6 +28,7 @@ import TagInput from './components/TagInput.vue'
 import TableAction from './components/TableAction.vue'
 import QuickEdit from './components/QuickEdit.vue'
 import UserAvatar from './components/UserAvatar.vue'
+import ImgView from './components/ImgView.vue'
 
 Vue.component('PageTitle', PageTitle);
 Vue.component('Loading', Loading);
@@ -34,6 +37,7 @@ Vue.component('TagInput', TagInput)
 Vue.component('TableAction', TableAction);
 Vue.component('QuickEdit', QuickEdit);
 Vue.component('UserAvatar', UserAvatar);
+Vue.component('ImgView', ImgView);
 
 import {
     Avatar,
@@ -43,6 +47,7 @@ import {
     DropdownMenu,
     DropdownItem,
 } from 'element-ui';
+
 Vue.component('EAvatar', Avatar);
 Vue.component('ETooltip', Tooltip);
 Vue.component('EPopover', Popover);
@@ -56,7 +61,7 @@ VueRouter.prototype.push = function push(location) {
 }
 
 const router = new VueRouter({
-    mode: !!__IS_ELECTRON ? 'hash' : 'history',
+    mode: isElectron ? 'hash' : 'history',
     routes
 });
 
@@ -77,9 +82,9 @@ router.afterEach(() => {
 Vue.prototype.goForward = function(location, isReplace) {
     if (typeof location === 'string') location = {name: location};
     if (isReplace === true) {
-        app.$router.replace(location).then(() => {});
+        app.$router.replace(location).then(() => {}).catch(() => {});
     } else {
-        app.$router.push(location).then(() => {});
+        app.$router.push(location).then(() => {}).catch(() => {});
     }
 };
 
@@ -89,7 +94,7 @@ Vue.prototype.goBack = function (number) {
     if ($A.runNum(history['::count']) > 2) {
         app.$router.go(typeof number === 'number' ? number : -1);
     } else {
-        app.$router.replace(typeof number === "object" ? number : {path: '/'}).then(() => {});
+        app.$router.replace(typeof number === "object" ? number : {path: '/'}).then(() => {}).catch(() => {});
     }
 };
 
@@ -98,8 +103,8 @@ Vue.prototype.$Electron = null;
 Vue.prototype.$Platform = "web";
 Vue.prototype.$isMainElectron = false;
 Vue.prototype.$isSubElectron = false;
-if (!!__IS_ELECTRON) {
-    Vue.prototype.$Electron = require('electron');
+if (isElectron) {
+    Vue.prototype.$Electron = electron;
     Vue.prototype.$Platform = /macintosh|mac os x/i.test(navigator.userAgent) ? "mac" : "win";
     Vue.prototype.$isMainElectron = /\s+MainTaskWindow\//.test(window.navigator.userAgent);
     Vue.prototype.$isSubElectron = /\s+SubTaskWindow\//.test(window.navigator.userAgent);
@@ -131,7 +136,7 @@ $A.isMainElectron = app.$isMainElectron;
 $A.isSubElectron = app.$isSubElectron;
 $A.execMainDispatch = (action, data) => {
     if ($A.isSubElectron) {
-        $A.Electron.ipcRenderer.send('sendForwardMain', {
+        $A.Electron.sendMessage('sendForwardMain', {
             channel: 'dispatch',
             data: {action, data},
         });

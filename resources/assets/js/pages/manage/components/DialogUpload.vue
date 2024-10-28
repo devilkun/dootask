@@ -28,7 +28,7 @@ export default {
         },
         maxSize: {
             type: Number,
-            default: 204800
+            default: 1024000
         }
     },
 
@@ -39,15 +39,15 @@ export default {
                 'drawio',
                 'mind',
                 'docx', 'wps', 'doc', 'xls', 'xlsx', 'ppt', 'pptx',
-                'jpg', 'jpeg', 'png', 'gif', 'bmp', 'ico', 'raw',
-                'rar', 'zip', 'jar', '7-zip', 'tar', 'gzip', '7z',
+                'jpg', 'jpeg', 'png', 'gif', 'bmp', 'ico', 'raw', 'svg',
+                'rar', 'zip', 'jar', '7-zip', 'tar', 'gzip', '7z', 'gz', 'apk', 'dmg',
                 'tif', 'tiff',
                 'dwg', 'dxf',
                 'ofd',
                 'pdf',
                 'txt',
                 'htaccess', 'htgroups', 'htpasswd', 'conf', 'bat', 'cmd', 'cpp', 'c', 'cc', 'cxx', 'h', 'hh', 'hpp', 'ino', 'cs', 'css',
-                'dockerfile', 'go', 'html', 'htm', 'xhtml', 'vue', 'we', 'wpy', 'java', 'js', 'jsm', 'jsx', 'json', 'jsp', 'less', 'lua', 'makefile', 'gnumakefile',
+                'dockerfile', 'go', 'golang', 'html', 'htm', 'xhtml', 'vue', 'we', 'wpy', 'java', 'js', 'jsm', 'jsx', 'json', 'jsp', 'less', 'lua', 'makefile', 'gnumakefile',
                 'ocamlmakefile', 'make', 'mysql', 'nginx', 'ini', 'cfg', 'prefs', 'm', 'mm', 'pl', 'pm', 'p6', 'pl6', 'pm6', 'pgsql', 'php',
                 'inc', 'phtml', 'shtml', 'php3', 'php4', 'php5', 'phps', 'phpt', 'aw', 'ctp', 'module', 'ps1', 'py', 'r', 'rb', 'ru', 'gemspec', 'rake', 'guardfile', 'rakefile',
                 'gemfile', 'rs', 'sass', 'scss', 'sh', 'bash', 'bashrc', 'sql', 'sqlserver', 'swift', 'ts', 'typescript', 'str', 'vbs', 'vb', 'v', 'vh', 'sv', 'svh', 'xml',

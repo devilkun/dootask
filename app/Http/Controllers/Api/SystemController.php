@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\User;
 use App\Module\Base;
+use Guanguans\Notify\Factory;
+use Guanguans\Notify\Messages\EmailMessage;
 use Request;
 use Response;
 
@@ -25,7 +27,7 @@ class SystemController extends AbstractController
      * @apiParam {String} type
      * - get: 获取（默认）
      * - all: 获取所有（需要管理员权限）
-     * - save: 保存设置（参数：reg、reg_invite、login_code、password_policy、project_invite、chat_nickname、auto_archived、archived_day）
+     * - save: 保存设置（参数：['reg', 'reg_invite', 'login_code', 'password_policy', 'project_invite', 'chat_nickname', 'auto_archived', 'archived_day', 'start_home', 'home_footer']）
 
      * @apiSuccess {Number} ret     返回状态码（1正确、0错误）
      * @apiSuccess {String} msg     返回信息（错误描述）
@@ -41,7 +43,18 @@ class SystemController extends AbstractController
             User::auth('admin');
             $all = Request::input();
             foreach ($all AS $key => $value) {
-                if (!in_array($key, ['reg', 'reg_invite', 'login_code', 'password_policy', 'project_invite', 'chat_nickname', 'auto_archived', 'archived_day'])) {
+                if (!in_array($key, [
+                    'reg',
+                    'reg_invite',
+                    'login_code',
+                    'password_policy',
+                    'project_invite',
+                    'chat_nickname',
+                    'auto_archived',
+                    'archived_day',
+                    'start_home',
+                    'home_footer'
+                ])) {
                     unset($all[$key]);
                 }
             }
@@ -72,12 +85,68 @@ class SystemController extends AbstractController
         $setting['chat_nickname'] = $setting['chat_nickname'] ?: 'optional';
         $setting['auto_archived'] = $setting['auto_archived'] ?: 'close';
         $setting['archived_day'] = floatval($setting['archived_day']) ?: 7;
+        $setting['start_home'] = $setting['start_home'] ?: 'close';
         //
         return Base::retSuccess('success', $setting ?: json_decode('{}'));
     }
 
     /**
-     * @api {get} api/system/demo          02. 获取演示账号
+     * @api {get} api/system/setting/email          02. 获取邮箱设置、保存邮箱设置（限管理员）
+     *
+     * @apiVersion 1.0.0
+     * @apiGroup system
+     * @apiName setting__email
+     *
+     * @apiParam {String} type
+     * - get: 获取（默认）
+     * - save: 保存设置（参数：['smtp_server', 'port', 'account', 'password', 'reg_verify', 'notice', 'task_remind_hours', 'task_remind_hours2']）
+     * @apiSuccess {Number} ret     返回状态码（1正确、0错误）
+     * @apiSuccess {String} msg     返回信息（错误描述）
+     * @apiSuccess {Object} data    返回数据
+     */
+    public function setting__email()
+    {
+        User::auth('admin');
+        //
+        $type = trim(Request::input('type'));
+        if ($type == 'save') {
+            if (env("SYSTEM_SETTING") == 'disabled') {
+                return Base::retError('当前环境禁止修改');
+            }
+            $all = Request::input();
+            foreach ($all as $key => $value) {
+                if (!in_array($key, [
+                    'smtp_server',
+                    'port',
+                    'account',
+                    'password',
+                    'reg_verify',
+                    'notice',
+                    'task_remind_hours',
+                    'task_remind_hours2'
+                ])) {
+                    unset($all[$key]);
+                }
+            }
+            $setting = Base::setting('emailSetting', Base::newTrim($all));
+        } else {
+            $setting = Base::setting('emailSetting');
+        }
+        //
+        $setting['smtp_server'] = $setting['smtp_server'] ?: '';
+        $setting['port'] = $setting['port'] ?: '';
+        $setting['account'] = $setting['account'] ?: '';
+        $setting['password'] = $setting['password'] ?: '';
+        $setting['reg_verify'] = $setting['reg_verify'] ?: 'close';
+        $setting['notice'] = $setting['notice'] ?: 'open';
+        $setting['task_remind_hours'] = floatval($setting['task_remind_hours']) ?: 0;
+        $setting['task_remind_hours2'] = floatval($setting['task_remind_hours2']) ?: 0;
+        //
+        return Base::retSuccess('success', $setting ?: json_decode('{}'));
+    }
+
+    /**
+     * @api {get} api/system/demo          03. 获取演示账号
      *
      * @apiVersion 1.0.0
      * @apiGroup system
@@ -101,7 +170,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {post} api/system/priority          03. 任务优先级
+     * @api {post} api/system/priority          04. 任务优先级
      *
      * @apiDescription 获取任务优先级、保存任务优先级
      * @apiVersion 1.0.0
@@ -150,7 +219,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {post} api/system/column/template          04. 创建项目模板
+     * @api {post} api/system/column/template          05. 创建项目模板
      *
      * @apiDescription 获取创建项目模板、保存创建项目模板
      * @apiVersion 1.0.0
@@ -197,7 +266,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {get} api/system/get/info          05. 获取终端详细信息
+     * @api {get} api/system/get/info          06. 获取终端详细信息
      *
      * @apiVersion 1.0.0
      * @apiGroup system
@@ -226,7 +295,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {get} api/system/get/ip          06. 获取IP地址
+     * @api {get} api/system/get/ip          07. 获取IP地址
      *
      * @apiVersion 1.0.0
      * @apiGroup system
@@ -241,7 +310,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {get} api/system/get/cnip          07. 是否中国IP地址
+     * @api {get} api/system/get/cnip          08. 是否中国IP地址
      *
      * @apiVersion 1.0.0
      * @apiGroup system
@@ -258,7 +327,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {get} api/system/get/ipgcj02          08. 获取IP地址经纬度
+     * @api {get} api/system/get/ipgcj02          09. 获取IP地址经纬度
      *
      * @apiVersion 1.0.0
      * @apiGroup system
@@ -275,7 +344,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {get} api/system/get/ipinfo          09. 获取IP地址详细信息
+     * @api {get} api/system/get/ipinfo          10. 获取IP地址详细信息
      *
      * @apiVersion 1.0.0
      * @apiGroup system
@@ -292,7 +361,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {post} api/system/imgupload          10. 上传图片
+     * @api {post} api/system/imgupload          11. 上传图片
      *
      * @apiDescription 需要token身份
      * @apiVersion 1.0.0
@@ -342,7 +411,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {get} api/system/get/imgview          11. 浏览图片空间
+     * @api {get} api/system/get/imgview          12. 浏览图片空间
      *
      * @apiDescription 需要token身份
      * @apiVersion 1.0.0
@@ -438,7 +507,7 @@ class SystemController extends AbstractController
     }
 
     /**
-     * @api {post} api/system/fileupload          12. 上传文件
+     * @api {post} api/system/fileupload          13. 上传文件
      *
      * @apiDescription 需要token身份
      * @apiVersion 1.0.0
@@ -477,5 +546,67 @@ class SystemController extends AbstractController
         }
         //
         return $data;
+    }
+
+    /**
+     * @api {get} api/system/get/starthome          14. 启动首页设置信息
+     *
+     * @apiDescription 用于判断注册是否需要启动首页
+     * @apiVersion 1.0.0
+     * @apiGroup system
+     * @apiName get__starthome
+     *
+     * @apiSuccess {Number} ret     返回状态码（1正确、0错误）
+     * @apiSuccess {String} msg     返回信息（错误描述）
+     * @apiSuccess {Object} data    返回数据
+     */
+    public function get__starthome()
+    {
+        return Base::retSuccess('success', [
+            'need_start' => Base::settingFind('system', 'start_home') == 'open',
+            'home_footer' => Base::settingFind('system', 'home_footer')
+        ]);
+    }
+
+    /**
+     * @api {get} api/system/email/check          15. 邮件发送测试（限管理员）
+     *
+     * @apiDescription 测试配置邮箱是否能发送邮件
+     * @apiVersion 1.0.0
+     * @apiGroup system
+     * @apiName email__check
+     *
+     * @apiSuccess {Number} ret     返回状态码（1正确、0错误）
+     * @apiSuccess {String} msg     返回信息（错误描述）
+     * @apiSuccess {Object} data    返回数据
+     */
+    public function email__check()
+    {
+        User::auth('admin');
+        //
+        $all = Request::input();
+        if (!Base::isEmail($all['to'])) {
+            return Base::retError('请输入正确的收件人地址');
+        }
+        try {
+            Factory::mailer()
+                ->setDsn("smtp://{$all['account']}:{$all['password']}@{$all['smtp_server']}:{$all['port']}?verify_peer=0")
+                ->setMessage(EmailMessage::create()
+                    ->from(env('APP_NAME', 'Task') . " <{$all['account']}>")
+                    ->to($all['to'])
+                    ->subject('Mail sending test')
+                    ->html('<p>收到此电子邮件意味着您的邮箱配置正确。</p><p>Receiving this email means that your mailbox is configured correctly.</p>'))
+                ->send();
+            return Base::retSuccess('成功发送');
+        } catch (\Exception $e) {
+            // 一般是请求超时
+            if (str_contains($e->getMessage(), "Timed Out")) {
+                return Base::retError("language.TimedOut");
+            } elseif ($e->getCode() === 550) {
+                return Base::retError('邮件内容被拒绝，请检查邮箱是否开启接收功能');
+            } else {
+                return Base::retError($e->getMessage());
+            }
+        }
     }
 }

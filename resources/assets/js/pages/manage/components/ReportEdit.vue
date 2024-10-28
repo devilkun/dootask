@@ -1,70 +1,51 @@
 <template>
-    <Form class="report-box" label-position="top" @submit.native.prevent>
-        <Row class="report-row">
-            <Col span="2">
-                <p class="report-titles">{{ $L("汇报类型") }}</p>
-            </Col>
-            <Col span="12">
-                <RadioGroup type="button" button-style="solid" v-model="reportData.type" @on-change="typeChange" class="report-radiogroup" :readonly="id > 0">
-                    <Radio label="weekly" :disabled="id > 0 && reportData.type =='daily'">{{ $L("周报") }}</Radio>
-                    <Radio label="daily" :disabled="id > 0 && reportData.type =='weekly'">{{ $L("日报") }}</Radio>
-                </RadioGroup>
-                <ButtonGroup class="report-buttongroup" v-if="id === 0">
-                    <ETooltip class="report-poptip" :content="prevCycleText" placement="bottom">
-                        <Button type="primary" @click="prevCycle">
-                            <Icon type="ios-arrow-back" />
-                        </Button>
-                    </ETooltip>
-                    <div class="report-buttongroup-vertical"></div>
-                    <ETooltip class="report-poptip" :disabled="reportData.offset >= 0" :content="nextCycleText" placement="bottom">
-                        <Button type="primary" @click="nextCycle" :disabled="reportData.offset >= 0">
-                            <Icon type="ios-arrow-forward" />
-                        </Button>
-                    </ETooltip>
-                </ButtonGroup>
-            </Col>
-        </Row>
-        <Row class="report-row">
-            <Col span="2">
-                <p class="report-titles">{{ $L("汇报名称") }}</p>
-            </Col>
-            <Col span="22">
-                <Input v-model="reportData.title" disabled/>
-            </Col>
-        </Row>
-        <Row class="report-row">
-            <Col span="2">
-                <p class="report-titles">{{ $L("汇报对象") }}</p>
-            </Col>
-            <Col span="22">
-                <div class="report-users">
-                    <UserInput
-                        v-model="reportData.receive"
-                        :disabledChoice="[userId]"
-                        :placeholder="$L('选择接收人')"
-                        :transfer="false"/>
-                    <a class="report-row-a" href="javascript:void(0);" @click="getLastSubmitter">
-                        <Icon class="report-row-a-icon" type="ios-share-outline" />{{ $L("使用我上次的汇报对象") }}
-                    </a>
-                </div>
-            </Col>
-        </Row>
-        <Row class="report-row report-row-content">
-            <Col span="2">
-                <p class="report-titles">{{ $L("汇报内容") }}</p>
-            </Col>
-            <Col span="22">
-                <FormItem class="report-row-content-editor">
-                    <TEditor v-model="reportData.content" height="100%"/>
-                </FormItem>
-            </Col>
-        </Row>
-        <Row class="report-row report-row-foot">
-            <Col span="2"></Col>
-            <Col span="4">
-                <Button type="primary" @click="handleSubmit" class="report-bottom">{{$L(id > 0 ? '修改' : '提交')}}</Button>
-            </Col>
-        </Row>
+    <Form class="report-edit" label-width="auto" @submit.native.prevent>
+        <FormItem :label="$L('汇报类型')">
+            <RadioGroup
+                type="button"
+                button-style="solid"
+                v-model="reportData.type"
+                @on-change="typeChange"
+                class="report-radiogroup"
+                :readonly="id > 0">
+                <Radio label="weekly" :disabled="id > 0 && reportData.type =='daily'">{{ $L("周报") }}</Radio>
+                <Radio label="daily" :disabled="id > 0 && reportData.type =='weekly'">{{ $L("日报") }}</Radio>
+            </RadioGroup>
+            <ButtonGroup v-if="id === 0" class="report-buttongroup">
+                <ETooltip :content="prevCycleText" placement="bottom">
+                    <Button type="primary" @click="prevCycle">
+                        <Icon type="ios-arrow-back" />
+                    </Button>
+                </ETooltip>
+                <div class="report-buttongroup-vertical"></div>
+                <ETooltip :disabled="reportData.offset >= 0" :content="nextCycleText" placement="bottom">
+                    <Button type="primary" @click="nextCycle" :disabled="reportData.offset >= 0">
+                        <Icon type="ios-arrow-forward" />
+                    </Button>
+                </ETooltip>
+            </ButtonGroup>
+        </FormItem>
+        <FormItem :label="$L('汇报名称')">
+            <Input v-model="reportData.title" disabled/>
+        </FormItem>
+        <FormItem :label="$L('汇报对象')">
+            <div class="report-users">
+                <UserInput
+                    v-model="reportData.receive"
+                    :disabledChoice="[userId]"
+                    :placeholder="$L('选择接收人')"
+                    :transfer="false"/>
+                <a class="report-user-link" href="javascript:void(0);" @click="getLastSubmitter">
+                    <Icon type="ios-share-outline" />{{ $L("使用我上次的汇报对象") }}
+                </a>
+            </div>
+        </FormItem>
+        <FormItem :label="$L('汇报内容')" class="report-content-editor">
+            <TEditor v-model="reportData.content" height="100%"/>
+        </FormItem>
+        <FormItem class="report-foot">
+            <Button type="primary" @click="handleSubmit" class="report-bottom">{{$L(id > 0 ? '修改' : '提交')}}</Button>
+        </FormItem>
     </Form>
 </template>
 
@@ -93,48 +74,44 @@ export default {
                 id: 0,
                 offset: 0 // 以当前日期为基础的周期偏移量。例如选择了上一周那么就是 -1，上一天同理。
             },
-            disabledType: false,
-            prevCycleText: "",
-            nextCycleText: "",
+            prevCycleText: this.$L("上一周"),
+            nextCycleText: this.$L("下一周"),
         };
     },
     watch: {
-        id(val) {
-            if (this.id > 0) {
-                this.getDetail(val);
-            }else{
-                this.reportData.offset = 0;
-                this.reportData.type = "weekly";
-                this.reportData.receive = [];
-                this.getTemplate();
-            }
+        id: {
+            handler(val) {
+                if (val > 0) {
+                    this.getDetail(val);
+                } else {
+                    this.reportData.offset = 0;
+                    this.reportData.type = "weekly";
+                    this.reportData.receive = [];
+                    this.getTemplate();
+                }
+            },
+            immediate: true
         },
     },
     computed: {
         ...mapState(["userId"])
     },
     mounted() {
-        this.getTemplate();
+        //
     },
     methods: {
-        initLanguage () {
-            this.prevCycleText = this.$L("上一周");
-            this.nextCycleText = this.$L("下一周");
-        },
-
-        handleSubmit: function () {
+        handleSubmit() {
             if (this.reportData.receive.length === 0) {
                 $A.messageError(this.$L("请选择接收人"));
                 return false;
             }
-            if (this.id === 0 && this.reportData.id > 1) {
+            if (this.id === 0 && this.reportData.id > 0) {
                 $A.modalConfirm({
                     title: '覆盖提交',
                     content: '你已提交过此日期的报告，是否覆盖提交？',
                     loading: true,
-                    append: this.$el,
                     onOk: () => {
-                        this.doSubmit();
+                        this.doSubmit(true);
                     }
                 });
             } else {
@@ -142,24 +119,23 @@ export default {
             }
         },
 
-        doSubmit() {
+        doSubmit(isModal = false) {
             this.$store.dispatch("call", {
                 url: 'report/store',
                 data: this.reportData,
                 method: 'post',
             }).then(({data, msg}) => {
+                isModal && this.$Modal.remove();
                 // data 结果数据
                 this.reportData.offset = 0;
                 this.reportData.type = "weekly";
                 this.reportData.receive = [];
                 this.getTemplate();
-                this.disabledType = false;
-                this.$Modal.remove();
                 // msg 结果描述
                 $A.messageSuccess(msg);
-                this.$emit("saveSuccess");
+                this.$emit("saveSuccess", data);
             }).catch(({msg}) => {
-                this.$Modal.remove();
+                isModal && this.$Modal.remove();
                 // msg 错误原因
                 $A.messageError(msg);
             });
@@ -173,13 +149,13 @@ export default {
                     offset: this.reportData.offset,
                     id: this.id
                 },
-            }).then(({data, msg}) => {
+            }).then(({data}) => {
                 // data 结果数据
                 if (data.id) {
                     this.reportData.id = data.id;
-                    if(this.id > 0){
+                    if (this.id > 0) {
                         this.getDetail(data.id);
-                    }else{
+                    } else {
                         this.reportData.title = data.title;
                         this.reportData.content = data.content;
                     }
@@ -188,7 +164,6 @@ export default {
                     this.reportData.title = data.title;
                     this.reportData.content = data.content;
                 }
-                // msg 结果描述
             }).catch(({msg}) => {
                 // msg 错误原因
                 $A.messageError(msg);
@@ -198,14 +173,14 @@ export default {
         typeChange(value) {
             // 切换汇报类型后偏移量归零
             this.reportData.offset = 0;
-            if ( value === "weekly" ) {
+            if (value === "weekly") {
                 this.prevCycleText = this.$L("上一周");
                 this.nextCycleText = this.$L("下一周");
             } else {
                 this.prevCycleText = this.$L("上一天");
                 this.nextCycleText = this.$L("下一天");
             }
-           this.getTemplate();
+            this.getTemplate();
         },
 
         getDetail(reportId) {
@@ -214,15 +189,13 @@ export default {
                 data: {
                     id: reportId
                 },
-            }).then(({data, msg}) => {
+            }).then(({data}) => {
                 // data 结果数据
                 this.reportData.title = data.title;
                 this.reportData.content = data.content;
                 this.reportData.receive = data.receives_user.map(({userid}) => userid);
                 this.reportData.type = data.type_val;
                 this.reportData.id = reportId;
-                this.disabledType = true;
-                // msg 结果描述
             }).catch(({msg}) => {
                 // msg 错误原因
                 $A.messageError(msg);
@@ -231,17 +204,15 @@ export default {
 
         prevCycle() {
             this.reportData.offset -= 1;
-            this.disabledType = false;
             this.reReportData();
             this.getTemplate();
         },
 
         nextCycle() {
             // 周期偏移量不允许大于0
-            if ( this.reportData.offset < 0 ) {
+            if (this.reportData.offset < 0) {
                 this.reportData.offset += 1;
             }
-            this.disabledType = false;
             this.reReportData();
             this.getTemplate();
         },
@@ -250,12 +221,9 @@ export default {
         getLastSubmitter() {
             this.$store.dispatch("call", {
                 url: 'report/last_submitter',
-            }).then(({data, msg}) => {
-                // data 结果数据
+            }).then(({data}) => {
                 this.reportData.receive = data;
-                // msg 结果描述
             }).catch(({msg}) => {
-                // msg 错误原因
                 $A.messageError(msg);
             });
         },
@@ -269,7 +237,3 @@ export default {
     }
 }
 </script>
-
-<style scoped>
-
-</style>

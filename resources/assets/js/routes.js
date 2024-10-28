@@ -49,7 +49,7 @@ export default [
                     {
                         name: 'manage-setting-system',
                         path: 'system',
-                        component: () => import('./pages/manage/setting/system/index.vue'),
+                        component: () => import('./pages/manage/setting/system.vue'),
                     },
                 ]
             },
@@ -89,6 +89,22 @@ export default [
         name: 'single-task',
         path: '/single/task/:id',
         component: () => import('./pages/single/task.vue'),
+    },
+    {
+        name: 'valid-email',
+        path: '/single/valid/email',
+        meta: {title: '验证绑定邮箱'},
+        component: () => import('./pages/single/validEmail.vue')
+    },
+    {
+        name: 'report-edit',
+        path: '/single/report/edit/:id',
+        component: () => import('./pages/single/reportEdit.vue')
+    },
+    {
+        name: 'report-detail',
+        path: '/single/report/detail/:id',
+        component: () => import('./pages/single/reportDetail.vue')
     },
     {
         name: 'login',

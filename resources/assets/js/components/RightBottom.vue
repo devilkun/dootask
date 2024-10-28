@@ -5,81 +5,182 @@
             {{ $L('使用 SSO 登录') }}
         </div>
         <template v-if="showDown">
-            <div v-if="$Electron" class="common-right-bottom-link" @click="releasesNotification">
+            <a v-if="downloadUrl" class="common-right-bottom-link" :href="downloadUrl" target="_blank">
                 <Icon type="md-download"/>
-                {{ $L(repoTitle) }}
-            </div>
-            <a v-else class="common-right-bottom-link" :href="repoReleases.html_url" target="_blank">
-                <Icon type="md-download"/>
-                {{ $L(repoTitle) }}
+                {{ $L('客户端下载') }}
             </a>
+            <div v-else-if="updateVersion && $Electron" class="common-right-bottom-link" @click="updateShow=true">
+                <Icon type="md-download"/>
+                {{ $L('更新客户端') }}
+            </div>
         </template>
+        <Modal
+            v-model="updateShow"
+            :closable="false"
+            :mask-closable="false"
+            class-name="common-right-bottom-notification">
+            <div slot="header">
+                <div class="notification-head">
+                    <div class="notification-title">{{$L('发现新版本')}}</div>
+                    <Tag color="volcano">v{{systemVersion}} -&gt; v{{updateVersion}}</Tag>
+                </div>
+                <div v-if="$Platform === 'mac'" class="notification-tip">{{$L('离最新版本只有一步之遥了！重新启动应用即可完成更新。')}}</div>
+            </div>
+            <MarkdownPreview class="notification-body overlay-y" :initialValue="updateNote"/>
+            <div slot="footer" class="adaption">
+                <Button type="default" @click="updateShow=false">{{$L('稍后')}}</Button>
+                <Button type="primary" :loading="updateIng" @click="updateQuitAndInstall">{{$L($Platform === 'mac' ? '重新启动' : '立即升级')}}</Button>
+            </div>
+        </Modal>
     </div>
 </template>
 
 <script>
-import Vue from 'vue'
 import MarkdownPreview from "./MDEditor/components/preview";
 import axios from "axios";
-Vue.component('MarkdownPreview', MarkdownPreview)
-
 import {mapState} from "vuex";
 import {Store} from "le5le-store";
 
 export default {
     name: 'RightBottom',
+    components: {MarkdownPreview},
     data() {
         return {
             loadIng: 0,
+            subscribe: null,
 
-            repoName: 'kuaifan/dootask',
-            repoData: {},
-            repoStatus: 0,  // 0 没有，1有客户端，2客户端有新版本
-            repoReleases: {},
+            apiVersion: '',
+            systemVersion: window.systemInfo.version,
 
-            downloadResult: {},
+            updateVersion: '',
+            updateNote: '',
+            updateShow: false,
+            updateIng: false,
+
+            downloadUrl: '',
         }
     },
+
     mounted() {
-        this.getReleases();
+        this.checkVersion()
         //
         if (this.$Electron) {
-            this.$Electron.ipcRenderer.on('downloadDone', (event, {result}) => {
-                if (result.name == this.repoData.name) {
-                    this.downloadResult = result;
-                    this.releasesNotification()
-                }
+            this.subscribe = Store.subscribe('updateNotification', _ => {
+                this.updateShow = true
+            })
+            this.$Electron.registerMsgListener('updateDownloaded', info => {
+                this.updateVersion = info.version;
+                this.updateNote = info.releaseNotes || this.$L('没有更新描述。');
+                this.updateShow = true;
             })
         }
     },
+
+    beforeDestroy() {
+        if (this.subscribe) {
+            this.subscribe.unsubscribe();
+            this.subscribe = null;
+        }
+    },
+
     computed: {
         ...mapState([
             'isDesktop',
-            'wsOpenNum',
         ]),
-
-        repoTitle() {
-            return this.repoStatus == 2 ? '更新客户端' : '客户端下载';
-        },
 
         showSSO() {
             return this.$Electron && ['login'].includes(this.$route.name)
         },
 
         showDown() {
-            return this.repoStatus && this.isDesktop && ['login', 'manage-dashboard'].includes(this.$route.name)
+            return this.isDesktop && ['login', 'index', 'manage-dashboard'].includes(this.$route.name)
         }
     },
-    watch: {
-        wsOpenNum(num) {
-            if (num <= 1) return
-            this.wsOpenTimeout && clearTimeout(this.wsOpenTimeout)
-            this.wsOpenTimeout = setTimeout(this.getReleases, 5000)
-        },
-    },
+
     methods: {
+        checkVersion() {
+            axios.get($A.apiUrl('../version')).then(({status, data}) => {
+                if (status === 200) {
+                    this.apiVersion = data.version || ''
+                    if (this.$Electron) {
+                        // 客户端提示更新
+                        this.$Electron.sendMessage('updateCheckAndDownload', {
+                            apiVersion: this.apiVersion
+                        })
+                    } else {
+                        // 网页端提示下载
+                        this.getDownloadUrl(data.publish)
+                    }
+                }
+            }).catch(_ => {
+
+            })
+            //
+            this.__checkVersion && clearTimeout(this.__checkVersion)
+            this.__checkVersion = setTimeout(this.checkVersion, 600 * 1000)
+        },
+
+        getDownloadUrl(publish) {
+            if (!$A.isJson(publish)) {
+                return;
+            }
+            //
+            switch (publish.provider) {
+                case 'generic':
+                    this.downloadUrl = `${publish.url}/${this.apiVersion}`
+                    break;
+
+                case 'github':
+                    let key = "cacheAppdown::" + this.apiVersion
+                    let cache = $A.getStorageJson(key);
+                    let timeout = 600;
+                    if (cache.time && cache.time + timeout > Math.round(new Date().getTime() / 1000)) {
+                        this.downloadUrl = cache.data.html_url;
+                        return;
+                    }
+                    //
+                    if (this.loadIng > 0) {
+                        return;
+                    }
+                    this.loadIng++;
+                    axios.get(`https://api.github.com/repos/${publish.owner}/${publish.repo}/releases`).then(({status, data}) => {
+                        this.loadIng--;
+                        if (status === 200 && $A.isArray(data)) {
+                            cache.time = Math.round(new Date().getTime() / 1000)
+                            cache.data = data.find(({tag_name}) => this.compareVersion(this.tagVersion(tag_name), this.apiVersion) === 0) || {}
+                            $A.setStorage(key, cache);
+                            this.downloadUrl = cache.data.html_url;
+                        }
+                    }).catch(() => {
+                        this.loadIng--;
+                    });
+                    break;
+            }
+        },
+
+        updateQuitAndInstall() {
+            this.updateIng = true
+            setTimeout(() => {
+                this.$Electron.sendMessage('updateQuitAndInstall')
+            }, 301)
+        },
+
+        useSSOLogin() {
+            Store.set('useSSOLogin', true);
+        },
+
+        tagVersion(tag) {
+            return tag ? $A.leftDelete(tag.toLowerCase(), "v") : ''
+        },
+
         compareVersion(version1, version2) {
             let pA = 0, pB = 0;
+
+            // 版本号完全相同
+            if (version1 === version2) {
+                return 0
+            }
+
             // 寻找当前区间的版本号
             const findDigit = (str, start) => {
                 let i = start;
@@ -100,6 +201,7 @@ export default {
                 pA = nextA + 1;
                 pB = nextB + 1;
             }
+
             // 若arrayA仍有小版本号
             while (pA < version1.length) {
                 const nextA = findDigit(version1, pA);
@@ -109,6 +211,7 @@ export default {
                 }
                 pA = nextA + 1;
             }
+
             // 若arrayB仍有小版本号
             while (pB < version2.length) {
                 const nextB = findDigit(version2, pB);
@@ -118,138 +221,10 @@ export default {
                 }
                 pB = nextB + 1;
             }
+
             // 版本号完全相同
             return 0;
         },
-
-        getReleases() {
-            if (this.repoStatus > 0) {
-                return;
-            }
-            if (this.loadIng > 0) {
-                return;
-            }
-            //
-            let cache = $A.getStorageJson("cacheAppdown");
-            let timeout = 600;
-            if (cache.time && cache.time + timeout > Math.round(new Date().getTime() / 1000)) {
-                this.repoReleases = cache.data;
-                this.chackReleases()
-                setTimeout(this.getReleases, timeout * 1000)
-                return;
-            }
-            //
-            this.loadIng++;
-            axios.get("https://api.github.com/repos/" + this.repoName + "/releases/latest").then(({status, data}) => {
-                this.loadIng--;
-                if (status === 200) {
-                    cache = {
-                        time: Math.round(new Date().getTime() / 1000),
-                        data: data
-                    }
-                    $A.setStorage("cacheAppdown", cache);
-                    this.repoReleases = cache.data;
-                    this.chackReleases()
-                }
-                setTimeout(this.getReleases, timeout * 1000)
-            }).catch(() => {
-                this.loadIng--;
-                setTimeout(this.getReleases, timeout * 1000)
-            });
-        },
-
-        chackReleases() {
-            let hostName = $A.getDomain(window.systemInfo.apiUrl);
-            if (hostName == "" || $A.leftExists(hostName, '127.0.0.1')) {
-                hostName = "public"
-            }
-            if (this.$Electron) {
-                // 客户端（更新）
-                let match = (window.navigator.userAgent + "").match(/\s+(Main|Sub)TaskWindow\/(.*?)\/(.*?)\//)
-                if (!match) {
-                    return;
-                }
-                let artifactName = null;
-                if (match[2] === 'darwin') {
-                    artifactName = `${hostName}-${this.repoReleases.tag_name}-mac-${match[3]}.pkg`;
-                } else if (match[2] === 'win32') {
-                    artifactName = `${hostName}-${this.repoReleases.tag_name}-win-${match[3]}.exe`;
-                } else {
-                    return;
-                }
-                this.repoData = (this.repoReleases.assets || []).find(({name}) => name == artifactName);
-                if (!this.repoData) {
-                    return;
-                }
-                let currentVersion = window.systemInfo.version;
-                let latestVersion = $A.leftDelete(this.repoReleases.tag_name.toLowerCase(), "v")
-                if (this.compareVersion(latestVersion, currentVersion) === 1) {
-                    // 有新版本
-                    console.log("New version: " + latestVersion);
-                    this.$Electron.ipcRenderer.send('downloadFile', {
-                        url: this.repoData.browser_download_url
-                    });
-                }
-            } else {
-                // 网页版（提示有客户端下载）
-                this.repoData = (this.repoReleases.assets || []).find(({name}) => $A.strExists(name, hostName));
-                if (this.repoData) {
-                    let latestVersion = $A.leftDelete(this.repoReleases.tag_name.toLowerCase(), "v")
-                    console.log("Exist client: " + latestVersion);
-                    this.repoStatus = 1;
-                }
-            }
-        },
-
-        releasesNotification() {
-            $A.modalConfirm({
-                okText: this.$L('立即更新'),
-                onOk: () => {
-                    this.installApplication();
-                },
-                onCancel: () => {
-                    this.repoStatus = 2;
-                },
-                render: (h) => {
-                    return h('div', {
-                        class: 'common-right-bottom-notification'
-                    }, [
-                        h('div', {
-                            class: "notification-head"
-                        }, [
-                            h('div', {
-                                class: "notification-title"
-                            }, this.$L('发现新版本')),
-                            h('Tag', {
-                                props: {
-                                    color: 'volcano'
-                                }
-                            }, this.repoReleases.tag_name)
-                        ]),
-                        h('MarkdownPreview', {
-                            class: 'notification-body',
-                            props: {
-                                initialValue: this.repoReleases.body
-                            }
-                        }),
-                    ])
-                }
-            });
-        },
-
-        installApplication() {
-            if (!this.$Electron) {
-                return;
-            }
-            this.$Electron.ipcRenderer.send('openFile', {
-                path: this.downloadResult.savePath
-            });
-            this.$Electron.ipcRenderer.send('windowQuit');
-        },
-
-        useSSOLogin() {
-            Store.set('useSSOLogin', true);
-        }
     }
 };
 </script>

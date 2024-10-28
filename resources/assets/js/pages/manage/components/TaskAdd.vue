@@ -176,7 +176,7 @@ export default {
                 cascader: [],
                 name: "",
                 content: "",
-                owner: 0,
+                owner: [],
                 add_assist: 1,
                 project_id: 0,
                 column_id: 0,
@@ -209,7 +209,7 @@ export default {
                 autoresize_bottom_margin: 2,
                 min_height: 200,
                 max_height: 380,
-                contextmenu: 'bold italic underline forecolor backcolor | codesample | uploadImages browseImages | preview screenload',
+                contextmenu: 'bold italic underline forecolor backcolor | codesample | uploadImages imagePreview | preview screenload',
                 valid_elements : 'a[href|target=_blank],em,strong/b,div[align],span[style],a,br,p,img[src|alt|witdh|height],pre[class],code',
                 toolbar: false
             },
@@ -238,7 +238,7 @@ export default {
             const {times} = this.addData;
             let temp = $A.date2string(times, "Y-m-d H:i");
             if (temp[0] && temp[1]) {
-                let d = Math.ceil(($A.Date(temp[1]).getTime() - $A.Date(temp[0]).getTime()) / 86400000);
+                let d = Math.ceil(($A.Date(temp[1], true) - $A.Date(temp[0], true)) / 86400);
                 if (d > 0) {
                     return d;
                 }
@@ -247,11 +247,7 @@ export default {
         },
 
         showAddAssist() {
-            const {owner} = this.addData;
-            if ($A.isArray(owner) && owner.includes(this.userId)) {
-                return false;
-            }
-            return owner != this.userId;
+            return !this.addData.owner.includes(this.userId);
         }
     },
     watch: {
@@ -357,7 +353,10 @@ export default {
             let tempc = $A.date2string(times, "Y-m-d H:i");
             if (tempc[0] && tempc[1]) {
                 if ($A.rightExists(tempc[0], '00:00') && $A.rightExists(tempc[1], '00:00')) {
-                    this.$set(times, 1, tempc[1].replace("00:00", "23:59"));
+                    this.$set(this.addData, 'times', [
+                        tempc[0],
+                        tempc[1].replace("00:00", "23:59")
+                    ])
                 }
             }
         },
@@ -376,8 +375,8 @@ export default {
             if (this.subName.trim() !== '') {
                 this.addData.subtasks.push({
                     name: this.subName.trim(),
+                    owner: [this.userId],
                     times: [],
-                    owner: this.userId
                 });
                 this.subName = '';
             }
@@ -489,7 +488,7 @@ export default {
                         cascader: [],
                         name: "",
                         content: "",
-                        owner: 0,
+                        owner: [],
                         add_assist: 1,
                         column_id: 0,
                         times: [],

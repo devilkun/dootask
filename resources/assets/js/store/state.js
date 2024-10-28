@@ -29,6 +29,7 @@ const stateData = {
     cacheColumns: $A.getStorageArray("cacheColumns"),
     cacheTasks: $A.getStorageArray("cacheTasks"),
     cacheProjectParameter: $A.getStorageArray("cacheProjectParameter"),
+    cacheTaskBrowse: $A.getStorageArray("cacheTaskBrowse"),
 
     // ServerUrl
     cacheServerUrl: $A.getStorageString("cacheServerUrl"),
@@ -42,6 +43,7 @@ const stateData = {
     wsMsg: {},
     wsCall: {},
     wsTimeout: null,
+    wsRandom: 0,
     wsOpenNum: 0,
     wsListener: {},
     wsReadTimeout: null,
@@ -118,6 +120,13 @@ const stateData = {
         {name: '暗黑', value: 'dark'},
     ],
     themeIsDark: false,
+
+    // 客户端新版本号
+    clientNewVersion: null,
+
+    // 预览图片
+    previewImageIndex: 0,
+    previewImageList: [],
 };
 
 // 会员信息

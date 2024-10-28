@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\File;
 use App\Models\ProjectTask;
 use App\Models\ProjectTaskFile;
 use App\Models\User;
@@ -40,7 +41,7 @@ class DialogController extends AbstractController
     {
         $user = User::auth();
         //
-        $list = WebSocketDialog::select(['web_socket_dialogs.*', 'u.top_at'])
+        $list = WebSocketDialog::select(['web_socket_dialogs.*', 'u.top_at', 'u.mark_unread'])
             ->join('web_socket_dialog_users as u', 'web_socket_dialogs.id', '=', 'u.dialog_id')
             ->where('u.userid', $user->userid)
             ->orderByDesc('u.top_at')
@@ -73,7 +74,7 @@ class DialogController extends AbstractController
         //
         $dialog_id = intval(Request::input('dialog_id'));
         //
-        $item = WebSocketDialog::select(['web_socket_dialogs.*'])
+        $item = WebSocketDialog::select(['web_socket_dialogs.*', 'u.top_at', 'u.mark_unread'])
             ->join('web_socket_dialog_users as u', 'web_socket_dialogs.id', '=', 'u.dialog_id')
             ->where('web_socket_dialogs.id', $dialog_id)
             ->where('u.userid', $user->userid)
@@ -153,6 +154,12 @@ class DialogController extends AbstractController
         if ($dialog->type == 'group' && $dialog->group_type == 'task') {
             $user->task_dialog_id = $dialog->id;
             $user->save();
+        }
+        //去掉标记未读
+        $isMarkDialogUser = WebSocketDialogUser::whereDialogId($dialog->id)->whereUserid($user->userid)->whereMarkUnread(1)->first();
+        if ($isMarkDialogUser) {
+            $isMarkDialogUser->mark_unread = 0;
+            $isMarkDialogUser->save();
         }
         //
         $data = $list->toArray();
@@ -296,8 +303,8 @@ class DialogController extends AbstractController
             $fileData['thumb'] = Base::unFillUrl($fileData['thumb']);
             $fileData['size'] *= 1024;
             //
-            if ($dialog->type === 'group') {
-                if ($dialog->group_type === 'task') {
+            if ($dialog->type === 'group' && $dialog->group_type === 'task') {  // 任务群聊保存文件
+                if (!in_array($fileData['ext'], File::localExt)) {      // 如果是图片不保存
                     $task = ProjectTask::whereDialogId($dialog->id)->first();
                     if ($task) {
                         $file = ProjectTaskFile::createInstance([
@@ -393,31 +400,13 @@ class DialogController extends AbstractController
         $data = $dialogMsg->toArray();
         //
         if ($data['type'] == 'file') {
-            $codeExt = ['txt'];
-            $officeExt = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
-            $localExt = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'ico', 'raw', 'tif', 'tiff', 'mp3', 'wav', 'mp4', 'flv', 'avi', 'mov', 'wmv', 'mkv', '3gp', 'rm'];
             $msg = Base::json2array($dialogMsg->getRawOriginal('msg'));
-            $filePath = public_path($msg['path']);
-            if (in_array($msg['ext'], $codeExt) && $msg['size'] < 2 * 1024 * 1024) {
-                // 文本预览，限制2M内的文件
-                $data['content'] = file_get_contents($filePath);
-                $data['file_mode'] = 1;
-            } elseif (in_array($msg['ext'], $officeExt)) {
-                // office预览
-                $data['file_mode'] = 2;
-            } else {
-                // 其他预览
-                if (in_array($msg['ext'], $localExt)) {
-                    $url = Base::fillUrl($msg['path']);
-                } else {
-                    $url = 'http://' . env('APP_IPPR') . '.3/' . $msg['path'];
-                }
-                $data['url'] = base64_encode($url);
-                $data['file_mode'] = 3;
-            }
+            $msg = File::formatFileData($msg);
+            $data['content'] = $msg['content'];
+            $data['file_mode'] = $msg['file_mode'];
         }
         //
-        return Base::retSuccess("success", $data);
+        return Base::retSuccess('success', $data);
     }
 
     /**
@@ -502,6 +491,61 @@ class DialogController extends AbstractController
         }
         $dialogUser->top_at = $dialogUser->top_at ? null : Carbon::now();
         $dialogUser->save();
-        return Base::retSuccess("success", $dialogId);
+        return Base::retSuccess("success", [
+            'id' => $dialogUser->dialog_id,
+            'top_at' => $dialogUser->top_at?->toDateTimeString(),
+        ]);
+    }
+
+    /**
+     * @api {get} api/dialog/msg/mark          13. 消息标记操作
+     *
+     * @apiDescription  需要token身份
+     * @apiVersion 1.0.0
+     * @apiGroup dialog
+     * @apiName msg__mark
+     *
+     * @apiParam {Number} dialog_id            消息ID
+     * @apiParam {String} type       类型
+     * - read
+     * - unread
+     *
+     * @apiSuccess {Number} ret     返回状态码（1正确、0错误）
+     * @apiSuccess {String} msg     返回信息（错误描述）
+     * @apiSuccess {Object} data    返回数据
+     */
+    public function msg__mark()
+    {
+        $user = User::auth();
+        $dialogId = intval(Request::input('dialog_id'));
+        $type = Request::input('type');
+        $dialogUser = WebSocketDialogUser::whereUserid($user->userid)->whereDialogId($dialogId)->first();
+        if (!$dialogUser) {
+            return Base::retError("会话不存在");
+        }
+        switch ($type) {
+            case 'read':
+                WebSocketDialogMsgRead::whereUserid($user->userid)
+                    ->whereReadAt(null)
+                    ->whereDialogId($dialogId)
+                    ->chunkById(100, function ($list) {
+                        WebSocketDialogMsgRead::onlyMarkRead($list);
+                    });
+                $dialogUser->mark_unread = 0;
+                $dialogUser->save();
+                break;
+
+            case 'unread':
+                $dialogUser->mark_unread = 1;
+                $dialogUser->save();
+                break;
+
+            default:
+                return Base::retError("参数错误");
+        }
+        return Base::retSuccess("success", [
+            'id' => $dialogId,
+            'mark_unread' => $dialogUser->mark_unread,
+        ]);
     }
 }

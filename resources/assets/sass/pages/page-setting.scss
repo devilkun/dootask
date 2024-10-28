@@ -44,6 +44,13 @@
                     padding: 0 20px;
                     margin: 5px 0;
                     position: relative;
+                    display: flex;
+                    align-items: center;
+
+                    .ivu-badge {
+                        transform: scale(0.8);
+                        transform-origin: right center;
+                    }
 
                     &.active,
                     &:hover {
@@ -187,7 +194,7 @@
                     height: 0;
                     .ivu-tabs-tabpane {
                         position: relative;
-                        .setting-system-item {
+                        .setting-component-item {
                             position: absolute;
                             top: 0;
                             left: 0;
@@ -201,6 +208,33 @@
                             }
                             .setting-footer {
                                 margin: 0 -32px;
+                            }
+                            .email-setting-box {
+                                position: relative;
+                                padding: 36px 24px 4px;
+                                margin: 24px 0 12px;
+                                border-radius: 8px;
+                                border: 1px solid #eeeeee;
+                                transition: box-shadow 0.3s;
+                                &:hover {
+                                    box-shadow: 0 0 10px #e6ecfa;
+                                }
+                                h3 {
+                                    position: absolute;
+                                    top: 0;
+                                    left: 24px;
+                                    padding: 4px 10px;
+                                    border-radius: 4px;
+                                    display: inline-block;
+                                    background-color: #ffffff;
+                                    border: 1px solid #eeeeee;
+                                    font-size: 15px;
+                                    font-weight: 500;
+                                    transform: translateY(-50%);
+                                }
+                            }
+                            .email-setting-placeholder {
+                                height: 8px;
                             }
                         }
                     }

@@ -29,6 +29,17 @@
                         height: 22px;
                     }
                 }
+                .top-text {
+                    width: 40px;
+                    height: 24px;
+                    border-radius:4px;
+                    margin-left: 10px;
+                    background-color: #8BCF70;
+                    color:#FFFFFF;
+                    text-align: center;
+                    margin-top: 3px;
+                    padding-top: 2px
+                }
             }
             .project-icons {
                 display: flex;
@@ -50,6 +61,9 @@
                     &:hover {
                         box-shadow: 0 0 6px #cccccc;
                     }
+                    &.cursor-default {
+                        cursor: default;
+                    }
                     &.project-avatar {
                         width: auto;
                         min-width: 36px;
@@ -63,6 +77,12 @@
                                 list-style: none;
                                 margin-left: -6px;
                                 transition: transform 0.2s;
+                                .ivu-badge {
+                                    position: absolute;
+                                    top: -5px;
+                                    left: 23px;
+                                    transform: scale(0.8);
+                                }
                                 &:hover {
                                     transform: scale(1.05);
                                 }
@@ -154,19 +174,24 @@
                         justify-content: center;
                         cursor: pointer;
                         &.start {
-                            background-color: rgba(38, 38, 38, 0.05);
-                            border-color: rgba(38, 38, 38, 0.05);
-                            color: #595959;
+                            background-color: rgba($flow-status-start-color, 0.1);
+                            border-color: rgba($flow-status-start-color, 0.1);
+                            color: $flow-status-start-color;
                         }
                         &.progress {
-                            background-color: rgba(27, 154, 238, 0.1);
-                            border-color: rgba(27, 154, 238, 0.1);
-                            color: #0171c2;
+                            background-color: rgba($flow-status-progress-color, 0.1);;
+                            border-color: rgba($flow-status-progress-color, 0.1);;
+                            color: $flow-status-progress-color;
+                        }
+                        &.test {
+                            background-color: rgba($flow-status-test-color, 0.1);;
+                            border-color: rgba($flow-status-test-color, 0.1);;
+                            color: $flow-status-test-color;
                         }
                         &.end {
-                            background-color: rgba(21, 173, 49, 0.1);
-                            border-color: rgba(21, 173, 49, 0.1);
-                            color: #038a24;
+                            background-color: rgba($flow-status-end-color, 0.1);;
+                            border-color: rgba($flow-status-end-color, 0.1);;
+                            color: $flow-status-end-color;
                         }
                     }
                 }
@@ -177,16 +202,15 @@
                     border-radius: 6px;
                     height: 30px;
                     position: relative;
-                    transition: box-shadow 0.2s;
-                    &:hover {
-                        box-shadow: 0 0 10px #e6ecfa;
+                    transition: all 0.2s;
+                    .active {
+                        color: $primary-color;
                     }
-                    &:before {
-                        content: "";
+                    .slider {
                         position: absolute;
                         top: 0;
                         left: 0;
-                        width: 50%;
+                        width: 33.3%;
                         height: 100%;
                         z-index: 0;
                         color: $primary-color;
@@ -194,6 +218,9 @@
                         border: 1px solid $primary-color;
                         background-color: rgba($primary-color, 0.1);
                         transition: left 0.2s;
+                    }
+                    &:hover {
+                        box-shadow: 0 0 10px #e6ecfa;
                     }
                     > div {
                         z-index: 1;
@@ -207,20 +234,6 @@
                         color: $primary-text-color;
                         > i {
                             font-size: 17px;
-                        }
-                        &:first-child {
-                            color: $primary-color;
-                        }
-                    }
-                    &.menu {
-                        &:before {
-                            left: 50%;
-                        }
-                        > div:first-child {
-                            color: $primary-text-color;
-                        }
-                        > div:last-child {
-                            color: $primary-color;
                         }
                     }
                 }
@@ -403,19 +416,24 @@
                                     margin-right: 4px;
                                     text-align: center;
                                     &.start {
-                                        background-color: rgba(38, 38, 38, 0.05);
-                                        border-color: rgba(38, 38, 38, 0.05);
-                                        color: #595959;
+                                        background-color: rgba($flow-status-start-color, 0.1);
+                                        border-color: rgba($flow-status-start-color, 0.1);
+                                        color: $flow-status-start-color;
                                     }
                                     &.progress {
-                                        background-color: rgba(27, 154, 238, 0.1);
-                                        border-color: rgba(27, 154, 238, 0.1);
-                                        color: #0171c2;
+                                        background-color: rgba($flow-status-progress-color, 0.1);;
+                                        border-color: rgba($flow-status-progress-color, 0.1);;
+                                        color: $flow-status-progress-color;
+                                    }
+                                    &.test {
+                                        background-color: rgba($flow-status-test-color, 0.1);;
+                                        border-color: rgba($flow-status-test-color, 0.1);;
+                                        color: $flow-status-test-color;
                                     }
                                     &.end {
-                                        background-color: rgba(21, 173, 49, 0.1);
-                                        border-color: rgba(21, 173, 49, 0.1);
-                                        color: #038a24;
+                                        background-color: rgba($flow-status-end-color, 0.1);;
+                                        border-color: rgba($flow-status-end-color, 0.1);;
+                                        color: $flow-status-end-color;
                                     }
                                 }
                                 > pre {
@@ -467,9 +485,9 @@
                                 padding: 0;
                                 margin: 10px 0 0 0;
                                 line-height: 20px;
-                                word-break: break-all;
-                                white-space: pre-wrap;
-                                word-wrap: break-word;
+                                text-overflow: ellipsis;
+                                white-space: nowrap;
+                                overflow: hidden;
                             }
                         }
                         .task-tags {
@@ -597,8 +615,7 @@
     .project-table {
         height: 100%;
         margin-top: 18px;
-        overflow-x: hidden;
-        overflow-y: auto;
+        overflow: auto;
         .task-row {
             background-color: #ffffff;
             border-bottom: 1px solid #F4F4F5;
@@ -631,6 +648,7 @@
         }
         .project-table-head,
         .project-table-body {
+            min-width: 800px;
             margin: 0 32px 12px;
             border-radius: 5px;
             border: 1px solid #F4F4F5;
@@ -766,19 +784,24 @@
                                 margin-right: 3px;
                                 text-align: center;
                                 &.start {
-                                    background-color: rgba(38, 38, 38, 0.05);
-                                    border-color: rgba(38, 38, 38, 0.05);
-                                    color: #595959;
+                                    background-color: rgba($flow-status-start-color, 0.1);
+                                    border-color: rgba($flow-status-start-color, 0.1);
+                                    color: $flow-status-start-color;
                                 }
                                 &.progress {
-                                    background-color: rgba(27, 154, 238, 0.1);
-                                    border-color: rgba(27, 154, 238, 0.1);
-                                    color: #0171c2;
+                                    background-color: rgba($flow-status-progress-color, 0.1);;
+                                    border-color: rgba($flow-status-progress-color, 0.1);;
+                                    color: $flow-status-progress-color;
+                                }
+                                &.test {
+                                    background-color: rgba($flow-status-test-color, 0.1);;
+                                    border-color: rgba($flow-status-test-color, 0.1);;
+                                    color: $flow-status-test-color;
                                 }
                                 &.end {
-                                    background-color: rgba(21, 173, 49, 0.1);
-                                    border-color: rgba(21, 173, 49, 0.1);
-                                    color: #038a24;
+                                    background-color: rgba($flow-status-end-color, 0.1);;
+                                    border-color: rgba($flow-status-end-color, 0.1);;
+                                    color: $flow-status-end-color;
                                 }
                             }
                         }
@@ -921,6 +944,10 @@
             }
         }
     }
+    .project-gantt {
+        height: 100%;
+        position: relative
+    }
 }
 .project-list-more-dropdown-menu {
     > li {
@@ -961,31 +988,32 @@
         color: $primary-text-color !important;
 
         &.start {
-            color: #595959 !important;
+            color: $flow-status-start-color !important;
         }
-
         &.progress {
-            color: #0171c2 !important;
+            color: $flow-status-progress-color !important;
         }
-
+        &.test {
+            color: $flow-status-test-color !important;
+        }
         &.end {
-            color: #038a24 !important;
+            color: $flow-status-end-color !important;
         }
 
         &:hover,
         &.ivu-cascader-menu-item-active {
             &.project-list-flow-cascader-item {
-
                 &.start {
-                    background-color: rgba(38, 38, 38, 0.05);
+                    background-color: rgba($flow-status-start-color, 0.1);
                 }
-
                 &.progress {
-                    background-color: rgba(27, 154, 238, 0.1);
+                    background-color: rgba($flow-status-progress-color, 0.1);;
                 }
-
+                &.test {
+                    background-color: rgba($flow-status-test-color, 0.1);;
+                }
                 &.end {
-                    background-color: rgba(21, 173, 49, 0.1);
+                    background-color: rgba($flow-status-end-color, 0.1);;
                 }
             }
         }

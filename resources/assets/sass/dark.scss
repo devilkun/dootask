@@ -38,6 +38,16 @@ body.dark-mode-reverse {
         }
     }
 
+    .common-avatar {
+        &.avatar-wrapper {
+            .avatar-box {
+                .avatar-char {
+                    color: #000000;
+                }
+            }
+        }
+    }
+
     .drawer-overlay {
         background: rgba(230, 230, 230, 0.6);
         .overlay-body {
@@ -78,6 +88,11 @@ body.dark-mode-reverse {
     .project-list {
         .project-head {
             .project-titbox {
+                .project-title {
+                    .top-text {
+                        color: #000000;
+                    }
+                }
                 .project-icons {
                     > li {
                         &.project-icon {
@@ -134,6 +149,20 @@ body.dark-mode-reverse {
     }
 
     .dialog-wrapper {
+        .dialog-nav {
+            .dialog-avatar {
+                .icon-avatar {
+                    color: #1c1917;
+                }
+            }
+            .dialog-title {
+                .main-title {
+                    > h2 {
+                        color: #555;
+                    }
+                }
+            }
+        }
         .dialog-scroller {
             .dialog-list {
                 > ul {
@@ -298,6 +327,43 @@ body.dark-mode-reverse {
                 .ivu-btn {
                     color: #000000;
                 }
+            }
+        }
+    }
+
+    .page-index {
+        .page-warp {
+            background-color: #efefef;
+            .page-header {
+                .header-nav {
+                    .header-nav-box {
+                        .header-right-one {
+                            .header-right-one-dropdown {
+                                color: #000000;
+                            }
+                        }
+                        .header-right-two {
+                            color: #000000;
+                        }
+                        .header-right-four {
+                            .ivu-dropdown{
+                                .ivu-dropdown-rel{
+                                    .header-right-one-dropdown {
+                                        color: #000000;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .header-content {
+                    .header-title, .header-tips {
+                        color: #000000;
+                    }
+                }
+            }
+            .page-header-bottom{
+                background-color: #efefef;
             }
         }
     }

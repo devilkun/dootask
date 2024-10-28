@@ -22,25 +22,35 @@
                         placement="right"
                         transfer-class-name="search-button-clear"
                         transfer>
-                        <Button :loading="loadIng > 0" type="primary" icon="ios-search" @click="getLists">{{$L('搜索')}}</Button>
+                        <Button :loading="loadIng > 0" type="primary" icon="ios-search" @click="onSearch">{{$L('搜索')}}</Button>
                         <div slot="content">
-                            <Button :loading="loadIng > 0" type="text" @click="getLists">{{$L('刷新')}}</Button>
+                            <Button v-if="keyIs" type="text" @click="keyIs=false">{{$L('取消筛选')}}</Button>
+                            <Button v-else :loading="loadIng > 0" type="text" @click="getLists">{{$L('刷新')}}</Button>
                         </div>
                     </Tooltip>
                 </li>
             </ul>
         </div>
-        <Table :columns="columns" :data="list" :loading="loadIng > 0" :no-data-text="$L(noText)"></Table>
-        <Page
-            class="page-container"
-            :total="total"
-            :current="page"
-            :pageSize="pageSize"
-            :disabled="loadIng > 0"
-            :simple="windowMax768"
-            showTotal
-            @on-change="setPage"
-            @on-page-size-change="setPageSize"/>
+        <div class="table-page-box">
+            <Table
+                :columns="columns"
+                :data="list"
+                :loading="loadIng > 0"
+                :no-data-text="$L(noText)"
+                stripe/>
+            <Page
+                :total="total"
+                :current="page"
+                :page-size="pageSize"
+                :disabled="loadIng > 0"
+                :simple="windowMax768"
+                :page-size-opts="[10,20,30,50,100]"
+                show-elevator
+                show-sizer
+                show-total
+                @on-change="setPage"
+                @on-page-size-change="setPageSize"/>
+        </div>
     </div>
 </template>
 
@@ -60,6 +70,7 @@ export default {
             loadIng: 0,
 
             keys: {},
+            keyIs: false,
 
             columns: [],
             list: [],
@@ -82,16 +93,31 @@ export default {
                 this.getLists();
             },
             immediate: true
+        },
+        keyIs(v) {
+            if (!v) {
+                this.keys = {}
+                this.setPage(1)
+            }
         }
     },
     methods: {
         initLanguage() {
             this.columns = [
                 {
-                    title: this.$L('ID'),
-                    minWidth: 50,
-                    maxWidth: 70,
+                    title: 'ID',
                     key: 'id',
+                    width: 80,
+                    render: (h, {row, column}) => {
+                        return h('TableAction', {
+                            props: {
+                                column: column,
+                                align: 'left'
+                            }
+                        }, [
+                            h("div", row.id),
+                        ]);
+                    }
                 },
                 {
                     title: this.$L('任务名称'),
@@ -215,9 +241,9 @@ export default {
             ]
         },
 
-        refresh() {
-            this.keys = {};
-            this.getLists()
+        onSearch() {
+            this.page = 1;
+            this.getLists();
         },
 
         getLists() {
@@ -225,6 +251,7 @@ export default {
                 return;
             }
             this.loadIng++;
+            this.keyIs = $A.objImplode(this.keys) != "";
             this.$store.dispatch("call", {
                 url: 'project/task/lists',
                 data: {
@@ -236,7 +263,7 @@ export default {
                         archived_at: 'desc'
                     },
                     page: Math.max(this.page, 1),
-                    pagesize: Math.max($A.runNum(this.pageSize), 20),
+                    pagesize: Math.max($A.runNum(this.pageSize), 10),
                 },
             }).then(({data}) => {
                 this.loadIng--;
@@ -282,7 +309,7 @@ export default {
         delete(row) {
             this.list = this.list.filter(({id}) => id != row.id);
             this.loadIng++;
-            this.$store.dispatch("removeTask", row.id).then(({msg}) => {
+            this.$store.dispatch("removeTask", {task_id: row.id}).then(({msg}) => {
                 $A.messageSuccess(msg);
                 this.loadIng--;
                 this.getLists();

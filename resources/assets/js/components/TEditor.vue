@@ -2,7 +2,7 @@
     <div class="teditor-wrapper">
         <div class="teditor-box" :class="[!inline && spinShow ? 'teditor-loadstyle' : 'teditor-loadedstyle']">
             <template v-if="inline">
-                <div ref="myTextarea" :id="id" v-html="content"></div>
+                <div ref="myTextarea" :id="id" v-html="spinShow ? '' : content"></div>
                 <Icon v-if="spinShow" type="ios-loading" :size="18" class="icon-loading icon-inline"></Icon>
             </template>
             <template v-else>
@@ -181,11 +181,7 @@
                     newValue = "";
                 }
                 if (!this.isTyping) {
-                    if (this.getEditor() !== null) {
-                        this.getEditor().setContent(newValue);
-                    } else{
-                        this.content = newValue;
-                    }
+                    this.setContent(newValue);
                 }
             },
             readOnly(value) {
@@ -239,7 +235,7 @@
                         },
                         insert: {
                             title: "Insert",
-                            items: "image link media addcomment pageembed template codesample inserttable | charmap emoticons hr | pagebreak nonbreaking anchor toc | insertdatetime | uploadImages browseImages | uploadFiles"
+                            items: "image link media addcomment pageembed template codesample inserttable | charmap emoticons hr | pagebreak nonbreaking anchor toc | insertdatetime | uploadImages | uploadFiles"
                         }
                     },
                     codesample_languages: [
@@ -266,13 +262,13 @@
                             fetch: (callback) => {
                                 let items = [{
                                     type: 'menuitem',
-                                    text: this.$L('上传图片'),
+                                    text: this.$L('上传本地图片'),
                                     onAction: () => {
                                         this.$refs.myUpload.handleClick();
                                     }
                                 }, {
                                     type: 'menuitem',
-                                    text: this.$L('浏览图片'),
+                                    text: this.$L('浏览已上传图片'),
                                     onAction: () => {
                                         this.$refs.myUpload.browsePicture();
                                     }
@@ -280,16 +276,35 @@
                                 callback(items);
                             }
                         });
-                        editor.ui.registry.addMenuItem('uploadImages', {
+                        editor.ui.registry.addNestedMenuItem('uploadImages', {
+                            icon: 'image',
                             text: this.$L('上传图片'),
-                            onAction: () => {
-                                this.$refs.myUpload.handleClick();
+                            getSubmenuItems: () => {
+                                return [{
+                                    type: 'menuitem',
+                                    text: this.$L('上传本地图片'),
+                                    onAction: () => {
+                                        this.$refs.myUpload.handleClick();
+                                    }
+                                }, {
+                                    type: 'menuitem',
+                                    text: this.$L('浏览已上传图片'),
+                                    onAction: () => {
+                                        this.$refs.myUpload.browsePicture();
+                                    }
+                                }];
                             }
                         });
-                        editor.ui.registry.addMenuItem('browseImages', {
-                            text: this.$L('浏览图片'),
+                        editor.ui.registry.addMenuItem('imagePreview', {
+                            text: this.$L('预览图片'),
                             onAction: () => {
-                                this.$refs.myUpload.browsePicture();
+                                const array = this.getValueImages();
+                                if (array.length === 0) {
+                                    $A.messageWarning("没有可预览的图片")
+                                    return;
+                                }
+                                this.$store.state.previewImageIndex = 0;
+                                this.$store.state.previewImageList = array;
                             }
                         });
                         editor.ui.registry.addButton('uploadFiles', {
@@ -459,6 +474,21 @@
                 return this.getEditor().getContent();
             },
 
+            setContent(content) {
+                if (this.getEditor() === null) {
+                    this.content = content;
+                } else if (content != this.getEditor().getContent()){
+                    this.getEditor().setContent(content);
+                }
+            },
+
+            focus() {
+                if (this.getEditor() === null) {
+                    return "";
+                }
+                return this.getEditor().focus();
+            },
+
             insertImage(src) {
                 this.insertContent('<img src="' + src + '">');
             },
@@ -470,6 +500,22 @@
                         this.insertImage(item.url);
                     }
                 }
+            },
+
+            getValueImages() {
+                let imgs = [];
+                let imgReg = /<img.*?(?:>|\/>)/gi;
+                let srcReg = /src=['"]?([^'"]*)['"]?/i;
+                let array = (this.getContent() + "").match(imgReg);
+                if (array) {
+                    for (let i = 0; i < array.length; i++) {
+                        let src = array[i].match(srcReg);
+                        if(src[1]){
+                            imgs.push(src[1]);
+                        }
+                    }
+                }
+                return imgs;
             },
 
             /********************文件上传部分************************/

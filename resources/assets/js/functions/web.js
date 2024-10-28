@@ -60,13 +60,13 @@
         /**
          * 项目配置模板
          * @param project_id
-         * @returns {{showMy: boolean, showUndone: boolean, project_id, chat: boolean, showHelp: boolean, showCompleted: boolean, cardInit: boolean, card: boolean, completedTask: boolean}}
+         * @returns {{showMy: boolean, showUndone: boolean, project_id, chat: boolean, showHelp: boolean, showCompleted: boolean, menuType: string, menuInit: boolean, completedTask: boolean}}
          */
         projectParameterTemplate(project_id) {
             return {
                 project_id,
-                card: true,
-                cardInit: false,
+                menuInit: false,
+                menuType: 'column',
                 chat: false,
                 showMy: true,
                 showHelp: true,
@@ -102,7 +102,7 @@
          * @returns {*|string}
          */
         formatTime(date) {
-            let time = Math.round($A.Date(date).getTime() / 1000),
+            let time = $A.Date(date, true),
                 string = '';
             if ($A.formatDate('Ymd') === $A.formatDate('Ymd', time)) {
                 string = $A.formatDate('H:i', time)
@@ -157,8 +157,10 @@
             let time = Math.round(this.Date(date).getTime() / 1000) - nowTime;
             if (time < 86400 * 7 && time > 0 ) {
                 return this.formatSeconds(time);
-            } else if (time <= 0) {
+            } else if (time < 0) {
                 return '-' + this.formatSeconds(time * -1);
+            } else if (time == 0) {
+                return 0 + 's';
             }
             return this.formatTime(date)
         },
@@ -358,21 +360,13 @@
         },
 
         /**
-         * 下载文件
-         * @param url
+         * 返回对话未读数量
+         * @param dialog
+         * @returns {*|number}
          */
-        downFile(url) {
-            if (!url) {
-                return
-            }
-            if ($A.Electron) {
-                $A.Electron.shell.openExternal(url).catch(() => {
-                    $A.modalError("下载失败");
-                });
-            } else {
-                window.open(url)
-            }
-        }
+        getDialogUnread(dialog) {
+            return dialog ? (dialog.unread || dialog.mark_unread || 0) : 0
+        },
     });
 
     /**
@@ -424,6 +418,22 @@
             }
             if (typeof config === "string") config = {title:config};
             let inputId = "modalInput_" + $A.randomString(6);
+            const onOk = () => {
+                if (typeof config.onOk === "function") {
+                    if (config.onOk(config.value, () => {
+                        $A.Modal.remove();
+                    }) === true) {
+                        $A.Modal.remove();
+                    }
+                } else {
+                    $A.Modal.remove();
+                }
+            };
+            const onCancel = () => {
+                if (typeof config.onCancel === "function") {
+                    config.onCancel();
+                }
+            };
             $A.Modal.confirm({
                 render: (h) => {
                     return h('div', [
@@ -443,27 +453,16 @@
                             on: {
                                 input: (val) => {
                                     config.value = val;
+                                },
+                                'on-enter': (e) => {
+                                    $A(e.target).parents(".ivu-modal-body").find(".ivu-btn-primary").click();
                                 }
                             }
                         })
                     ])
                 },
-                onOk: () => {
-                    if (typeof config.onOk === "function") {
-                        if (config.onOk(config.value, () => {
-                            $A.Modal.remove();
-                        }) === true) {
-                            $A.Modal.remove();
-                        }
-                    } else {
-                        $A.Modal.remove();
-                    }
-                },
-                onCancel: () => {
-                    if (typeof config.onCancel === "function") {
-                        config.onCancel();
-                    }
-                },
+                onOk,
+                onCancel,
                 loading: true,
                 okText: $A.L(config.okText || '确定'),
                 cancelText: $A.L(config.cancelText || '取消'),

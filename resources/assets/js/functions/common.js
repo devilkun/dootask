@@ -135,6 +135,22 @@
         },
 
         /**
+         * 删除右边字符串
+         * @param string
+         * @param find
+         * @param lower
+         * @returns {string}
+         */
+        rightDelete(string, find, lower = false) {
+            string += "";
+            find += "";
+            if (this.rightExists(string, find, lower)) {
+                string = string.substring(0, string.length - find.length)
+            }
+            return string ? string : '';
+        },
+
+        /**
          * 取字符串中间
          * @param string
          * @param start
@@ -360,7 +376,7 @@
          * @returns {boolean}
          */
         isEmail(email) {
-            return /^[a-z0-9][a-z\.0-9-_]+@[a-z0-9_-]+(?:\.[a-z]{0,3}\.[a-z]{0,2}|\.[a-z]{0,3}|\.[a-z]{0,2})$/.test(email);
+            return /^([0-9a-zA-Z]([-.\w]*[0-9a-zA-Z])*@([0-9a-zA-Z][-\w]*\.)+[a-zA-Z]*)$/i.test(email);
         },
 
         /**
@@ -683,7 +699,7 @@
                     url+= '&' + key + '=' + params[key];
                 }
             }
-            return url.replace("?&", "?");
+            return this.rightDelete(url.replace("?&", "?"), '?');
         },
 
         /**
@@ -967,6 +983,28 @@
             let domain = (weburl + "").match(urlReg);
             return ((domain != null && domain.length > 0) ? domain[2] : "");
         },
+
+        /**
+         * 滚动到View
+         * @param element
+         * @param options
+         */
+        scrollToView(element, options) {
+            if (!element) {
+                return;
+            }
+            if (typeof options.scrollMode !== "undefined" && typeof window.scrollIntoView === "function") {
+                window.scrollIntoView(element, options)
+                return;
+            }
+            try {
+                element.scrollIntoView(options);
+            } catch (e) {
+                if (typeof window.scrollIntoView === "function") {
+                    window.scrollIntoView(element, options)
+                }
+            }
+        }
     });
 
     /**

@@ -28,6 +28,9 @@
 }
 
 .common-right-bottom-notification {
+    .ivu-modal-header {
+        padding-bottom: 8px !important;
+    }
     .notification-head {
         display: flex;
         align-items: center;
@@ -44,9 +47,16 @@
         max-height: 210px;
         overflow-x: hidden;
         overflow-y: auto;
-        margin: 18px 0;
+        margin-bottom: 16px;
         .markdown-preview {
             margin: -20px -12px;
+            h1 {
+                font-size: 24px;
+                margin-bottom: 12px;
+                &:first-child {
+                    padding-top: 0;
+                }
+            }
             h2 {
                 font-size: 18px !important;
                 padding-top: 2px !important;
@@ -62,6 +72,13 @@
                 }
             }
         }
+    }
+    .notification-tip {
+        display: inline-block;
+        color: #999999;
+        line-height: 22px;
+        padding-top: 4px;
+        font-size: 12px;
     }
     .notification-link {
         margin-top: 20px;

@@ -1,31 +1,31 @@
 <template>
-    <div class="project-list">
+    <div class="project-list" :class="[tabTypeActive]">
         <PageTitle :title="projectData.name"/>
         <div class="project-head">
             <div class="project-titbox">
                 <div class="project-title">
                     <h1>{{projectData.name}}</h1>
-                    <div v-if="projectLoad > 0" class="project-load"><Loading/></div>
+                    <label v-if="projectData.top_at" class="top-text">{{$L('置顶')}}</label>
+                    <div v-if="loading" class="project-load"><Loading/></div>
                 </div>
                 <ul class="project-icons">
-                    <li class="project-avatar" @click="projectDropdown('user')">
+                    <li class="project-avatar" :class="{'cursor-default': projectData.owner_userid !== userId}" @click="projectDropdown('user')">
                         <ul>
                             <li>
                                 <UserAvatar :userid="projectData.owner_userid" :size="36" :borderWitdh="2" :openDelay="0">
                                     <p>{{$L('项目负责人')}}</p>
                                 </UserAvatar>
+                                <Badge v-if="(windowWidth <= 980 || projectParameter('chat')) && projectUser.length > 0" type="normal" :count="projectData.project_user.length"/>
                             </li>
-                            <template v-if="projectUser.length > 0 && windowWidth > 980">
-                                <template v-for="(item, index) in projectUser"  v-if="index < projectUserShowNum">
-                                    <li v-if="index + 1 == projectUserShowNum && projectUser.length > projectUserShowNum" class="more">
-                                        <ETooltip :content="$L('共' + (projectUser.length + 1) + '个成员')">
-                                            <Icon type="ios-more"/>
-                                        </ETooltip>
-                                    </li>
-                                    <li>
-                                        <UserAvatar :userid="item.userid" :size="36" :borderWitdh="2" :openDelay="0"/>
-                                    </li>
-                                </template>
+                            <template v-if="!(windowWidth <= 980 || projectParameter('chat')) && projectUser.length > 0" v-for="item in projectUser">
+                                <li v-if="item.userid === -1" class="more">
+                                    <ETooltip :content="$L('共' + (projectData.project_user.length) + '个成员')">
+                                        <Icon type="ios-more"/>
+                                    </ETooltip>
+                                </li>
+                                <li v-else>
+                                    <UserAvatar :userid="item.userid" :size="36" :borderWitdh="2" :openDelay="0"/>
+                                </li>
                             </template>
                         </ul>
                     </li>
@@ -56,6 +56,7 @@
                                 <EDropdownItem command="invite">{{$L('邀请链接')}}</EDropdownItem>
                                 <EDropdownItem command="log" divided>{{$L('项目动态')}}</EDropdownItem>
                                 <EDropdownItem command="archived_task">{{$L('已归档任务')}}</EDropdownItem>
+                                <EDropdownItem command="deleted_task">{{$L('已删除任务')}}</EDropdownItem>
                                 <EDropdownItem command="transfer" divided>{{$L('移交项目')}}</EDropdownItem>
                                 <EDropdownItem command="archived">{{$L('归档项目')}}</EDropdownItem>
                                 <EDropdownItem command="delete" style="color:#f40">{{$L('删除项目')}}</EDropdownItem>
@@ -63,6 +64,7 @@
                             <EDropdownMenu v-else slot="dropdown">
                                 <EDropdownItem command="log">{{$L('项目动态')}}</EDropdownItem>
                                 <EDropdownItem command="archived_task">{{$L('已归档任务')}}</EDropdownItem>
+                                <EDropdownItem command="deleted_task">{{$L('已删除任务')}}</EDropdownItem>
                                 <EDropdownItem command="exit" divided style="color:#f40">{{$L('退出项目')}}</EDropdownItem>
                             </EDropdownMenu>
                         </EDropdown>
@@ -80,14 +82,16 @@
                             <span :class="`project-flow ${flowInfo.status}`">{{ flowTitle }}</span>
                         </Cascader>
                     </div>
-                    <div :class="['project-switch-button', !projectParameter('card') ? 'menu' : '']" @click="$store.dispatch('toggleProjectParameter', 'card')">
-                        <div><i class="taskfont">&#xe60c;</i></div>
-                        <div><i class="taskfont">&#xe66a;</i></div>
+                    <div class="project-switch-button">
+                        <div class="slider" :style="tabTypeStyle"></div>
+                        <div @click="tabTypeChange('column')" :class="{ 'active': tabTypeActive === 'column'}"><i class="taskfont">&#xe60c;</i></div>
+                        <div @click="tabTypeChange('table')" :class="{ 'active': tabTypeActive === 'table'}"><i class="taskfont">&#xe66a;</i></div>
+                        <div @click="tabTypeChange('gantt')" :class="{ 'active': tabTypeActive === 'gantt'}"><i class="taskfont">&#xe797;</i></div>
                     </div>
                 </div>
             </div>
         </div>
-        <div v-if="projectParameter('card')" class="project-column">
+        <div v-if="tabTypeActive === 'column'" class="project-column">
             <Draggable
                 :list="columnList"
                 :animation="150"
@@ -149,6 +153,7 @@
                             :disabled="sortDisabled || !isDesktop"
                             class="task-list"
                             draggable=".task-draggable"
+                            filter=".complete"
                             group="task"
                             @sort="sortUpdate"
                             @remove="sortUpdate">
@@ -223,7 +228,7 @@
                 </li>
             </Draggable>
         </div>
-        <div v-else class="project-table overlay-y">
+        <div v-else-if="tabTypeActive === 'table'" class="project-table overlay-y">
             <div class="project-table-head">
                 <Row class="task-row">
                     <Col span="12"># {{$L('任务名称')}}</Col>
@@ -310,7 +315,10 @@
                 <TaskRow v-if="projectParameter('showCompleted')" :list="completedList" open-key="completed" @on-priority="addTaskOpen" showCompleteAt/>
             </div>
         </div>
-
+        <div v-else-if="tabTypeActive === 'gantt'" class="project-gantt">
+            <!--甘特图-->
+            <ProjectGantt :projectColumn="columnList" :flowInfo="flowInfo"/>
+        </div>
         <!--项目设置-->
         <Modal
             v-model="settingShow"
@@ -321,7 +329,7 @@
                     <Input ref="projectName" type="text" v-model="settingData.name" :maxlength="32" :placeholder="$L('必填')"></Input>
                 </FormItem>
                 <FormItem prop="desc" :label="$L('项目介绍')">
-                    <Input type="textarea" :autosize="{ minRows: 3, maxRows: 5 }" v-model="settingData.desc" :maxlength="255" :placeholder="$L('选填')"></Input>
+                    <Input ref="projectDesc" type="textarea" :autosize="{ minRows: 3, maxRows: 5 }" v-model="settingData.desc" :maxlength="255" :placeholder="$L('选填')"></Input>
                 </FormItem>
             </Form>
             <div slot="footer" class="adaption">
@@ -432,6 +440,14 @@
             :size="900">
             <TaskArchived v-if="archivedTaskShow" :project-id="projectId"/>
         </DrawerOverlay>
+
+        <!--查看已删除任务-->
+        <DrawerOverlay
+            v-model="deletedTaskShow"
+            placement="right"
+            :size="900">
+            <TaskDeleted v-if="deletedTaskShow" :project-id="projectId"/>
+        </DrawerOverlay>
     </div>
 </template>
 
@@ -453,6 +469,8 @@ import ProjectLog from "./ProjectLog";
 import DrawerOverlay from "../../../components/DrawerOverlay";
 import ProjectWorkflow from "./ProjectWorkflow";
 import TaskMenu from "./TaskMenu";
+import TaskDeleted from "./TaskDeleted";
+import ProjectGantt from "./ProjectGantt";
 
 export default {
     name: "ProjectList",
@@ -460,9 +478,11 @@ export default {
         TaskMenu,
         ProjectWorkflow,
         DrawerOverlay,
-        ProjectLog, TaskArchived, TaskRow, Draggable, TaskAddSimple, UserInput, TaskAdd, TaskPriority},
+        ProjectLog, TaskArchived, TaskRow, Draggable, TaskAddSimple, UserInput, TaskAdd, TaskPriority, TaskDeleted, ProjectGantt},
     data() {
         return {
+            loading: false,
+
             nowTime: $A.Time(),
             nowInterval: null,
 
@@ -499,6 +519,7 @@ export default {
             workflowShow: false,
             logShow: false,
             archivedTaskShow: false,
+            deletedTaskShow: false,
 
             projectDialogSubscribe: null,
 
@@ -534,8 +555,6 @@ export default {
             'userId',
             'cacheDialogs',
 
-            'taskPriority',
-
             'projectId',
             'projectLoad',
             'cacheTasks',
@@ -545,6 +564,28 @@ export default {
         ]),
 
         ...mapGetters(['projectData', 'projectParameter', 'transforTasks']),
+
+        tabTypeActive() {
+            return this.projectParameter('menuType')
+        },
+
+        tabTypeStyle() {
+            let style = {}
+            switch (this.tabTypeActive) {
+                case 'column':
+                    style.left = '0'
+                    break
+                case 'table':
+                    style.left = '33.33%'
+                    break
+                case 'gantt':
+                    style.left = '66.66%'
+                    break
+                default:
+                    style.display = 'none'
+            }
+            return style
+        },
 
         userWaitRemove() {
             const {userids, useridbak} = this.userData;
@@ -563,7 +604,7 @@ export default {
         msgUnread() {
             const {cacheDialogs, projectData} = this;
             const dialog = cacheDialogs.find(({id}) => id === projectData.dialog_id);
-            return dialog ? dialog.unread : 0;
+            return dialog ? $A.getDialogUnread(dialog) : 0;
         },
 
         panelTask() {
@@ -587,15 +628,19 @@ export default {
         },
 
         projectUser() {
-            const {projectData} = this;
+            const {projectData, windowWidth} = this;
             if (!projectData.project_user) {
                 return [];
             }
-            return projectData.project_user.filter(({userid}) => userid != projectData.owner_userid)
-        },
-
-        projectUserShowNum() {
-            return this.windowWidth > 1200 ? 8 : 3;
+            let max = windowWidth > 1200 ? 8 : 3
+            let list = projectData.project_user.filter(({userid}) => userid != projectData.owner_userid)
+            if (list.length <= max) {
+                return list
+            }
+            let array = list.slice(0, max - 1);
+            array.push({userid: -1})
+            array.push(list[list.length - 1])
+            return array;
         },
 
         allTask() {
@@ -622,10 +667,8 @@ export default {
                 column.tasks = this.transforTasks(allTask.filter(task => {
                     return task.column_id == column.id;
                 })).sort((a, b) => {
-                    let at1 = $A.Date(a.complete_at),
-                        at2 = $A.Date(b.complete_at);
-                    if (at1 || at2) {
-                        return at1 - at2;
+                    if (a.complete_at || b.complete_at) {
+                        return $A.Date(a.complete_at) - $A.Date(b.complete_at);
                     }
                     if (a.sort != b.sort) {
                         return a.sort - b.sort;
@@ -639,10 +682,12 @@ export default {
         myList() {
             const {allTask, taskCompleteTemps, sortField, sortType} = this;
             let array = allTask.filter(task => this.myFilter(task));
-            let tmps = taskCompleteTemps.filter(task => this.myFilter(task, false));
-            if (tmps.length > 0) {
-                array = $A.cloneJSON(array)
-                array.push(...tmps);
+            if (taskCompleteTemps.length > 0) {
+                let tmps = allTask.filter(task => taskCompleteTemps.includes(task.id) && this.myFilter(task, false));
+                if (tmps.length > 0) {
+                    array = $A.cloneJSON(array)
+                    array.push(...tmps);
+                }
             }
             return array.sort((a, b) => {
                 if (sortType == 'asc') {
@@ -662,10 +707,12 @@ export default {
         helpList() {
             const {allTask, taskCompleteTemps, sortField, sortType} = this;
             let array = allTask.filter(task => this.helpFilter(task));
-            let tmps = taskCompleteTemps.filter(task => this.helpFilter(task, false));
-            if (tmps.length > 0) {
-                array = $A.cloneJSON(array)
-                array.push(...tmps);
+            if (taskCompleteTemps.length > 0) {
+                let tmps = allTask.filter(task => taskCompleteTemps.includes(task.id) && this.helpFilter(task, false));
+                if (tmps.length > 0) {
+                    array = $A.cloneJSON(array)
+                    array.push(...tmps);
+                }
             }
             return array.sort((a, b) => {
                 if (sortType == 'asc') {
@@ -792,6 +839,16 @@ export default {
         projectData() {
             this.sortData = this.getSort();
         },
+        projectLoad(n) {
+            this._loadTimeout && clearTimeout(this._loadTimeout)
+            if (n > 0) {
+                this._loadTimeout = setTimeout(() => {
+                    this.loading = true;
+                }, 1000)
+            } else {
+                this.loading = false;
+            }
+        },
         projectId: {
             handler(val) {
                 if (val > 0) {
@@ -843,14 +900,24 @@ export default {
                 $A.messageSuccess(msg);
                 this.sortDisabled = false;
                 //
-                if (!data.only_column) {
-                    let sort,
-                        upTask = [];
+                let sort,
+                    upData = [];
+                if (data.only_column) {
+                    sort = -1;
+                    data.sort.forEach((item) => {
+                        sort++;
+                        upData.push({
+                            id: item.id,
+                            sort,
+                        })
+                    })
+                    this.$store.dispatch("saveColumn", upData)
+                } else {
                     data.sort.forEach((item) => {
                         sort = -1;
-                        upTask.push(...item.task.map(id => {
+                        upData.push(...item.task.map(id => {
                             sort++;
-                            upTask.push(...this.allTask.filter(task => {
+                            upData.push(...this.allTask.filter(task => {
                                 return task.parent_id == id
                             }).map(({id}) => {
                                 return {
@@ -866,7 +933,7 @@ export default {
                             }
                         }))
                     })
-                    this.$store.dispatch("saveTask", upTask)
+                    this.$store.dispatch("saveTask", upData)
                 }
             }).catch(({msg}) => {
                 $A.modalError(msg);
@@ -1117,7 +1184,8 @@ export default {
                     this.$set(this.settingData, 'desc', this.projectData.desc);
                     this.settingShow = true;
                     this.$nextTick(() => {
-                        this.$refs.projectName.focus();
+                        this.$refs.projectName.focus()
+                        setTimeout(this.$refs.projectDesc.resizeTextarea, 0)
                     });
                     break;
 
@@ -1148,6 +1216,10 @@ export default {
 
                 case "archived_task":
                     this.archivedTaskShow = true;
+                    break;
+
+                case "deleted_task":
+                    this.deletedTaskShow = true;
                     break;
 
                 case "transfer":
@@ -1230,6 +1302,7 @@ export default {
         },
 
         getFlowData() {
+            this.flowInfo = {}
             this.$store.dispatch("call", {
                 url: 'project/flow/list',
                 data: {
@@ -1274,13 +1347,9 @@ export default {
                 }
                 $A.modalConfirm({
                     content: '设置尚未保存，是否放弃修改？',
-                    cancelText: '放弃',
-                    okText: '保存',
-                    onCancel: () => {
-                        resolve()
-                    },
+                    cancelText: '取消',
+                    okText: '放弃',
                     onOk: () => {
-                        this.$refs.workflow.saveAll()
                         resolve()
                     }
                 });
@@ -1326,6 +1395,32 @@ export default {
 
         expiresFormat(date) {
             return $A.countDownFormat(date, this.nowTime)
+        },
+
+        tabTypeChange(type) {
+            switch (type) {
+                case "column":
+                    this.$store.dispatch('toggleProjectParameter', {
+                        project_id: this.projectId,
+                        key: 'menuType',
+                        value: 'column'
+                    });
+                    break;
+                case "table":
+                    this.$store.dispatch('toggleProjectParameter', {
+                        project_id: this.projectId,
+                        key: 'menuType',
+                        value: 'table'
+                    });
+                    break;
+                case "gantt":
+                    this.$store.dispatch('toggleProjectParameter', {
+                        project_id: this.projectId,
+                        key: 'menuType',
+                        value: 'gantt'
+                    });
+                    break;
+            }
         },
     }
 }

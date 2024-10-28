@@ -113,6 +113,7 @@ class Project extends AbstractModel
             ->select([
                 'projects.*',
                 'project_users.owner',
+                'project_users.top_at',
             ])
             ->leftJoin('project_users', function ($leftJoin) use ($userid) {
                 $leftJoin
@@ -136,6 +137,7 @@ class Project extends AbstractModel
             ->select([
                 'projects.*',
                 'project_users.owner',
+                'project_users.top_at',
             ])
             ->join('project_users', 'projects.id', '=', 'project_users.project_id')
             ->where('project_users.userid', $userid);
@@ -374,6 +376,7 @@ class Project extends AbstractModel
             $idc = [];
             $hasStart = false;
             $hasEnd = false;
+            $upTaskList = [];
             foreach ($flows as $item) {
                 $id = intval($item['id']);
                 $turns = Base::arrayRetainInt($item['turns'] ?: [], true);
@@ -401,7 +404,7 @@ class Project extends AbstractModel
                     'userids' => $userids,
                     'usertype' => trim($item['usertype']),
                     'userlimit' => $userlimit,
-                ]);
+                ], [], $isInsert);
                 if ($flow) {
                     $ids[] = $flow->id;
                     if ($flow->id != $id) {
@@ -412,6 +415,9 @@ class Project extends AbstractModel
                     }
                     if ($flow->status == 'end') {
                         $hasEnd = true;
+                    }
+                    if (!$isInsert) {
+                        $upTaskList[$flow->id] = $flow->status . "|" . $flow->name;
                     }
                 }
             }
@@ -426,6 +432,12 @@ class Project extends AbstractModel
                     $item->deleteFlowItem();
                 }
             });
+            //
+            foreach ($upTaskList as $id => $value) {
+                ProjectTask::whereFlowItemId($id)->update([
+                    'flow_item_name' => $value
+                ]);
+            }
             //
             $projectFlow = ProjectFlow::with(['projectFlowItem'])->whereProjectId($this->id)->find($projectFlow->id);
             $itemIds = $projectFlow->projectFlowItem->pluck('id')->toArray();

@@ -1,5 +1,5 @@
 const fs = require("fs");
-const {shell} = require("electron");
+const {shell, dialog} = require("electron");
 
 module.exports = {
     /**
@@ -269,4 +269,103 @@ module.exports = {
         }
         return Math.round(time / 1000)
     },
+
+    /**
+     * 显示窗口
+     * @param win
+     */
+    setShowWindow(win) {
+        if (win) {
+            if (win.isMinimized()) {
+                win.restore()
+            }
+            win.focus()
+            win.show()
+        }
+    },
+
+    /**
+     * 窗口关闭事件
+     * @param event
+     * @param app
+     */
+    onBeforeUnload(event, app) {
+        return new Promise(resolve => {
+            const sender = event.sender
+            const contents = sender.webContents
+            if (contents != null) {
+                contents.executeJavaScript('if(typeof window.__onBeforeUnload === \'function\'){window.__onBeforeUnload()}', true).then(options => {
+                    if (this.isJson(options)) {
+                        let choice = dialog.showMessageBoxSync(sender, options)
+                        if (choice === 1) {
+                            contents.executeJavaScript('if(typeof window.__removeBeforeUnload === \'function\'){window.__removeBeforeUnload()}', true).catch(() => {});
+                            resolve()
+                        }
+                    } else if (options !== true) {
+                        resolve()
+                    }
+                })
+                event.preventDefault()
+            }
+        })
+    },
+
+    /**
+     * 版本比较
+     * @param version1
+     * @param version2
+     * @returns number  0: 相同，1: version1大，-1: version2大
+     */
+    compareVersion(version1, version2) {
+        let pA = 0, pB = 0;
+
+        // 版本号完全相同
+        if (version1 === version2) {
+            return 0
+        }
+
+        // 寻找当前区间的版本号
+        const findDigit = (str, start) => {
+            let i = start;
+            while (str[i] !== '.' && i < str.length) {
+                i++;
+            }
+            return i;
+        }
+
+        while (pA < version1.length && pB < version2.length) {
+            const nextA = findDigit(version1, pA);
+            const nextB = findDigit(version2, pB);
+            const numA = +version1.substr(pA, nextA - pA);
+            const numB = +version2.substr(pB, nextB - pB);
+            if (numA !== numB) {
+                return numA > numB ? 1 : -1;
+            }
+            pA = nextA + 1;
+            pB = nextB + 1;
+        }
+
+        // 若arrayA仍有小版本号
+        while (pA < version1.length) {
+            const nextA = findDigit(version1, pA);
+            const numA = +version1.substr(pA, nextA - pA);
+            if (numA > 0) {
+                return 1;
+            }
+            pA = nextA + 1;
+        }
+
+        // 若arrayB仍有小版本号
+        while (pB < version2.length) {
+            const nextB = findDigit(version2, pB);
+            const numB = +version2.substr(pB, nextB - pB);
+            if (numB > 0) {
+                return -1;
+            }
+            pB = nextB + 1;
+        }
+
+        // 版本号完全相同
+        return 0;
+    }
 }

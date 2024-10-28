@@ -107,10 +107,12 @@ export default {
                 return task.owner;
             }
             let array = cacheTasks.filter(task => filterTask(task));
-            let tmps = taskCompleteTemps.filter(task => filterTask(task, false));
-            if (tmps.length > 0) {
-                array = $A.cloneJSON(array)
-                array.push(...tmps);
+            if (taskCompleteTemps.length > 0) {
+                let tmps = cacheTasks.filter(task => taskCompleteTemps.includes(task.id) && filterTask(task, false));
+                if (tmps.length > 0) {
+                    array = $A.cloneJSON(array)
+                    array.push(...tmps);
+                }
             }
             return this.transforTasks(array).map(data => {
                 const isAllday = $A.rightExists(data.start_at, "00:00:00") && $A.rightExists(data.end_at, "23:59:59")
@@ -326,7 +328,7 @@ export default {
             }
             Store.set('addTask', {
                 times: [start, end],
-                owner: this.userId,
+                owner: [this.userId],
                 beforeClose: () => {
                     guide.clearGuideElement();
                 }
@@ -359,7 +361,7 @@ export default {
                         content: '你确定要删除任务【' + data.name + '】吗？',
                         loading: true,
                         onOk: () => {
-                            this.$store.dispatch("removeTask", data.id).then(({msg}) => {
+                            this.$store.dispatch("removeTask", {task_id: data.id}).then(({msg}) => {
                                 $A.messageSuccess(msg);
                                 this.$Modal.remove();
                             }).catch(({msg}) => {

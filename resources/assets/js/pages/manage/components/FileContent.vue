@@ -50,10 +50,10 @@
                     <MDEditor v-if="contentDetail.type=='md'" v-model="contentDetail.content" height="100%"/>
                     <TEditor v-else v-model="contentDetail.content" height="100%" @editorSave="handleClick('saveBefore')"/>
                 </template>
-                <Drawio v-else-if="file.type=='drawio'" ref="myFlow" v-model="contentDetail" @saveData="handleClick('saveBefore')"/>
+                <Drawio v-else-if="file.type=='drawio'" ref="myFlow" v-model="contentDetail" :title="file.name" @saveData="handleClick('saveBefore')"/>
                 <Minder v-else-if="file.type=='mind'" ref="myMind" v-model="contentDetail" @saveData="handleClick('saveBefore')"/>
+                <AceEditor v-else-if="['code', 'txt'].includes(file.type)" v-model="contentDetail" :ext="file.ext" @saveData="handleClick('saveBefore')"/>
                 <OnlyOffice v-else-if="['word', 'excel', 'ppt'].includes(file.type)" v-model="contentDetail" :documentKey="documentKey"/>
-                <AceEditor v-else-if="['code', 'txt'].includes(file.type)" v-model="contentDetail.content" :ext="file.ext" @saveData="handleClick('saveBefore')"/>
             </div>
         </template>
         <div v-if="contentLoad" class="content-load"><Loading/></div>
@@ -62,7 +62,7 @@
 
 <script>
 import Vue from 'vue'
-import Minder from '../../../components/minder'
+import Minder from '../../../components/Minder'
 import {mapState} from "vuex";
 Vue.use(Minder)
 
@@ -109,12 +109,29 @@ export default {
     },
 
     mounted() {
-        document.addEventListener('keydown', this.keySave);
+        document.addEventListener('keydown', this.keySave)
         window.addEventListener('message', this.handleMessage)
+        //
+        if (this.$isSubElectron) {
+            window.__onBeforeUnload = () => {
+                if (!this.equalContent) {
+                    $A.modalConfirm({
+                        content: '修改的内容尚未保存，真的要放弃修改吗？',
+                        cancelText: '取消',
+                        okText: '放弃',
+                        onOk: () => {
+                            this.$Electron.sendMessage('windowDestroy');
+                        }
+                    });
+                    return true
+                }
+            }
+            this.$store.dispatch("websocketConnection")
+        }
     },
 
     beforeDestroy() {
-        document.removeEventListener('keydown', this.keySave);
+        document.removeEventListener('keydown', this.keySave)
         window.removeEventListener('message', this.handleMessage)
     },
 
@@ -253,10 +270,6 @@ export default {
                 this.loadContent--;
                 this.contentDetail = data.content;
                 this.updateBak();
-                //
-                if (this.$isSubElectron) {
-                    this.$store.dispatch("websocketConnection")
-                }
             }).catch(({msg}) => {
                 $A.modalError(msg);
                 this.loadIng--;

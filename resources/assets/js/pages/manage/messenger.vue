@@ -21,7 +21,8 @@
                 </div>
                 <ScrollerY
                     ref="list"
-                    class="messenger-list overlay-y"
+                    class="messenger-list"
+                    :class="overlayClass"
                     @on-scroll="listScroll"
                     static>
                     <ul
@@ -36,12 +37,13 @@
                                 top: dialog.top_at,
                                 active: dialog.id == dialogId,
                                 operate: dialog.id == topOperateItem.id && topOperateVisible,
+                                completed: $A.dialogCompleted(dialog)
                             }"
                             @click="openDialog(dialog, true)"
                             @contextmenu.prevent.stop="handleRightClick($event, dialog)">
                             <template v-if="dialog.type=='group'">
                                 <i v-if="dialog.group_type=='project'" class="taskfont icon-avatar project">&#xe6f9;</i>
-                                <i v-else-if="dialog.group_type=='task'" class="taskfont icon-avatar task" :class="{completed:$A.dialogCompleted(dialog)}">&#xe6f4;</i>
+                                <i v-else-if="dialog.group_type=='task'" class="taskfont icon-avatar task">&#xe6f4;</i>
                                 <Icon v-else class="icon-avatar" type="ios-people" />
                             </template>
                             <div v-else-if="dialog.dialog_user" class="user-avatar"><UserAvatar :userid="dialog.dialog_user.userid" :size="42"/></div>
@@ -57,7 +59,7 @@
                                 </div>
                                 <div class="dialog-text no-dark-mode">{{formatLastMsg(dialog.last_msg)}}</div>
                             </div>
-                            <Badge class="dialog-num" :count="dialog.unread"/>
+                            <Badge class="dialog-num" :count="$A.getDialogUnread(dialog)"/>
                         </li>
                     </ul>
                     <ul v-else class="contacts">
@@ -84,13 +86,24 @@
                                 <DropdownItem @click.native="handleTopClick">
                                     {{ $L(topOperateItem.top_at ? '取消置顶' : '置顶该聊天') }}
                                 </DropdownItem>
+                                <DropdownItem @click.native="updateRead('read')" v-if="$A.getDialogUnread(topOperateItem) > 0">
+                                    {{ $L('标记已读') }}
+                                </DropdownItem>
+                                <DropdownItem @click.native="updateRead('unread')" v-else>
+                                    {{ $L('标记未读') }}
+                                </DropdownItem>
                             </DropdownMenu>
                         </Dropdown>
                     </div>
                 </ScrollerY>
                 <div class="messenger-menu">
-                    <Icon @click="tabActive='dialog'" :class="{active:tabActive==='dialog'}" type="ios-chatbubbles" />
-                    <Icon @click="tabActive='contacts'" :class="{active:tabActive==='contacts'}" type="md-person" />
+                    <div class="menu-icon">
+                        <Icon @click="tabActive='dialog'" :class="{active:tabActive==='dialog'}" type="ios-chatbubbles" />
+                        <Badge class="menu-num" :count="msgUnread('all')"/>
+                    </div>
+                    <div class="menu-icon">
+                        <Icon @click="tabActive='contacts'" :class="{active:tabActive==='contacts'}" type="md-person" />
+                    </div>
                 </div>
             </div>
 
@@ -201,21 +214,22 @@ export default {
             return function (type) {
                 let num = 0;
                 this.cacheDialogs.some((dialog) => {
-                    if (dialog.unread) {
+                    let unread = $A.getDialogUnread(dialog);
+                    if (unread) {
                         switch (type) {
                             case 'project':
                             case 'task':
                                 if (type == dialog.group_type) {
-                                    num += dialog.unread;
+                                    num += unread;
                                 }
                                 break;
                             case 'user':
                                 if (type == dialog.type) {
-                                    num += dialog.unread;
+                                    num += unread;
                                 }
                                 break;
                             default:
-                                num += dialog.unread;
+                                num += unread;
                                 break;
                         }
                     }
@@ -223,6 +237,13 @@ export default {
                 return num;
             }
         },
+
+        overlayClass() {
+            return {
+                'overlay-y': true,
+                'overlay-none': this.topOperateVisible === true,
+            }
+        }
     },
 
     watch: {
@@ -267,16 +288,12 @@ export default {
         onActive(type) {
             if (this.dialogActive == type) {
                 // 再次点击滚动到未读条目
-                const dialog = this.dialogList.find(({unread}) => unread > 0)
+                const dialog = this.dialogList.find(dialog => $A.getDialogUnread(dialog) > 0)
                 if (dialog) {
-                    try {
-                        this.$refs[`dialog_${dialog.id}`][0].scrollIntoView();
-                    } catch (e) {
-                        scrollIntoView(this.$refs[`dialog_${dialog.id}`][0], {
-                            behavior: 'instant',
-                            inline: 'end',
-                        })
-                    }
+                    $A.scrollToView(this.$refs[`dialog_${dialog.id}`][0], {
+                        behavior: 'smooth',
+                        scrollMode: 'if-needed',
+                    })
                 }
             }
             this.dialogActive = type
@@ -307,7 +324,7 @@ export default {
         },
 
         filterDialog(dialog) {
-            if (dialog.unread > 0 || dialog.id == this.dialogId || dialog.top_at) {
+            if ($A.getDialogUnread(dialog) > 0 || dialog.id == this.dialogId || dialog.top_at) {
                 return true
             }
             if (dialog.name === undefined) {
@@ -418,7 +435,7 @@ export default {
                 if (this.$refs.list) {
                     let active = this.$refs.list.querySelector(".active")
                     if (active) {
-                        scrollIntoView(active, {
+                        $A.scrollToView(active, {
                             behavior: smooth === true ? 'smooth' : 'instant',
                             scrollMode: 'if-needed',
                         });
@@ -429,7 +446,7 @@ export default {
                             this.$nextTick(() => {
                                 let active = this.$refs.list.querySelector(".active")
                                 if (active) {
-                                    scrollIntoView(active, {
+                                    $A.scrollToView(active, {
                                         behavior: smooth === true ? 'smooth' : 'instant',
                                         scrollMode: 'if-needed',
                                     });
@@ -465,12 +482,27 @@ export default {
                 data: {
                     dialog_id: this.topOperateItem.id,
                 },
-            }).then(() => {
-                this.$store.dispatch("getDialogs");
-                this.$Modal.remove();
+            }).then(({data}) => {
+                this.$store.dispatch("saveDialog", data);
+                this.$nextTick(() => {
+                    this.scrollIntoActive(false)
+                });
             }).catch(({msg}) => {
-                $A.modalError(msg, 301);
-                this.$Modal.remove();
+                $A.modalError(msg);
+            });
+        },
+
+        updateRead(type) {
+            this.$store.dispatch("call", {
+                url: 'dialog/msg/mark',
+                data: {
+                    dialog_id: this.topOperateItem.id,
+                    type: type
+                },
+            }).then(({data}) => {
+                this.$store.dispatch("saveDialog", data);
+            }).catch(({msg}) => {
+                $A.modalError(msg);
             });
         }
     }

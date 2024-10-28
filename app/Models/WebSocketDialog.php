@@ -54,11 +54,23 @@ class WebSocketDialog extends AbstractModel
     public function deleteDialog()
     {
         AbstractModel::transaction(function () {
-            WebSocketDialogMsgRead::whereDialogId($this->id)->whereNull('read_at')->update([
-                'read_at' => Carbon::now()
-            ]);
+            WebSocketDialogMsgRead::whereDialogId($this->id)
+                ->whereNull('read_at')
+                ->chunkById(100, function ($list) {
+                    WebSocketDialogMsgRead::onlyMarkRead($list);
+                });
             $this->delete();
         });
+        return true;
+    }
+
+    /**
+     * 还原会话
+     * @return bool
+     */
+    public function recoveryDialog()
+    {
+        $this->restore();
         return true;
     }
 
@@ -106,12 +118,14 @@ class WebSocketDialog extends AbstractModel
         $dialog->last_msg = $last_msg;
         // 未读信息
         $dialog->unread = WebSocketDialogMsgRead::whereDialogId($dialog->id)->whereUserid($userid)->whereReadAt(null)->count();
+        $dialog->mark_unread = $dialog->mark_unread ?? WebSocketDialogUser::whereDialogId($dialog->id)->whereUserid($userid)->value('mark_unread');
         // 对话人数
         $builder = WebSocketDialogUser::whereDialogId($dialog->id);
         $dialog->people = $builder->count();
         // 对方信息
         $dialog->dialog_user = null;
         $dialog->group_info = null;
+        $dialog->top_at = $dialog->top_at ?? WebSocketDialogUser::whereDialogId($dialog->id)->whereUserid($userid)->value('top_at');
         switch ($dialog->type) {
             case "user":
                 $dialog_user = $builder->where('userid', '!=', $userid)->first();

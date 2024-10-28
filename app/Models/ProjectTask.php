@@ -7,10 +7,12 @@ use App\Module\Base;
 use App\Tasks\PushTask;
 use Arr;
 use Carbon\Carbon;
+use Config;
 use DB;
 use Exception;
 use Hhxsv5\LaravelS\Swoole\Task\Task;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Mail;
 use Request;
 
 /**
@@ -40,6 +42,7 @@ use Request;
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
+ * @property int|null $deleted_userid 删除会员
  * @property-read \App\Models\ProjectTaskContent|null $content
  * @property-read int $file_num
  * @property-read int $msg_num
@@ -58,7 +61,7 @@ use Request;
  * @property-read int|null $task_user_count
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask allData($userid = null)
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask authData($userid = null, $owner = null)
- * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask betweenTime($start, $end)
+ * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask betweenTime($start, $end, $type = 'taskTime')
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask newQuery()
  * @method static \Illuminate\Database\Query\Builder|ProjectTask onlyTrashed()
@@ -71,6 +74,7 @@ use Request;
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask whereCompleteAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask whereCreatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask whereDeletedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask whereDeletedUserid($value)
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask whereDesc($value)
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask whereDialogId($value)
  * @method static \Illuminate\Database\Eloquent\Builder|ProjectTask whereEndAt($value)
@@ -235,7 +239,7 @@ class ProjectTask extends AbstractModel
      */
     public function content(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasOne(ProjectTaskContent::class, 'task_id', 'id');
+        return $this->hasOne(ProjectTaskContent::class, 'task_id', 'id')->orderByDesc('id');
     }
 
     /**
@@ -243,7 +247,7 @@ class ProjectTask extends AbstractModel
      */
     public function taskFile(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(ProjectTaskFile::class, 'task_id', 'id')->orderBy('id');
+        return $this->hasMany(ProjectTaskFile::class, 'task_id', 'id')->orderByDesc('id')->limit(50);
     }
 
     /**
@@ -312,18 +316,33 @@ class ProjectTask extends AbstractModel
      * @param $query
      * @param $start
      * @param $end
+     * @param $type
      * @return mixed
      */
-    public function scopeBetweenTime($query, $start, $end)
+    public function scopeBetweenTime($query, $start, $end, $type = 'taskTime')
     {
-        $query->where(function ($q1) use ($start, $end) {
-            $q1->where(function ($q2) use ($start) {
-                $q2->where('project_tasks.start_at', '<=', $start)->where('project_tasks.end_at', '>=', $start);
-            })->orWhere(function ($q2) use ($end) {
-                $q2->where('project_tasks.start_at', '<=', $end)->where('project_tasks.end_at', '>=', $end);
-            })->orWhere(function ($q2) use ($start, $end) {
-                $q2->where('project_tasks.start_at', '>', $start)->where('project_tasks.end_at', '<', $end);
-            });
+        $query->where(function ($q1) use ($start, $end, $type) {
+            switch ($type) {
+                case 'createdTime':
+                    $q1->where(function ($q2) use ($start) {
+                        $q2->where('project_tasks.created_at', '>=', $start);
+                    })->orWhere(function ($q2) use ($end) {
+                        $q2->where('project_tasks.created_at', '<=', $end);
+                    })->orWhere(function ($q2) use ($start, $end) {
+                        $q2->where('project_tasks.created_at', '>', $start)->where('project_tasks.created_at', '<', $end);
+                    });
+                    break;
+
+                default:
+                    $q1->where(function ($q2) use ($start) {
+                        $q2->where('project_tasks.start_at', '<=', $start)->where('project_tasks.end_at', '>=', $start);
+                    })->orWhere(function ($q2) use ($end) {
+                        $q2->where('project_tasks.start_at', '<=', $end)->where('project_tasks.end_at', '>=', $end);
+                    })->orWhere(function ($q2) use ($start, $end) {
+                        $q2->where('project_tasks.start_at', '>', $start)->where('project_tasks.end_at', '<', $end);
+                    });
+                    break;
+            }
         });
         return $query;
     }
@@ -467,7 +486,9 @@ class ProjectTask extends AbstractModel
                 ProjectTaskContent::createInstance([
                     'project_id' => $task->project_id,
                     'task_id' => $task->id,
-                    'content' => $content,
+                    'content' => [
+                        'url' => ProjectTaskContent::saveContent($task->id, $content)
+                    ],
                 ])->save();
             }
             if ($task->parent_id == 0 && $subtasks && is_array($subtasks)) {
@@ -513,6 +534,10 @@ class ProjectTask extends AbstractModel
             $mainTask = $this->parent_id > 0 ? self::find($this->parent_id) : null;
             // 工作流
             if (Arr::exists($data, 'flow_item_id')) {
+                $isProjectOwner = $this->useridInTheProject(User::userid()) === 2;
+                if (!$isProjectOwner && !$this->isOwner()) {
+                    throw new ApiException('仅限项目或任务负责人修改任务状态');
+                }
                 if ($this->flow_item_id == $data['flow_item_id']) {
                     throw new ApiException('任务状态未发生改变');
                 }
@@ -533,8 +558,7 @@ class ProjectTask extends AbstractModel
                             throw new ApiException("当前状态[{$currentFlowItem->name}]不可流转到[{$newFlowItem->name}]");
                         }
                         if ($currentFlowItem->userlimit) {
-                            if (!in_array(User::userid(), $currentFlowItem->userids)
-                                && !ProjectUser::whereProjectId($this->project_id)->whereOwner(1)->exists()) {
+                            if (!$isProjectOwner && !in_array(User::userid(), $currentFlowItem->userids)) {
                                 throw new ApiException("当前状态[{$currentFlowItem->name}]仅限状态负责人或项目负责人修改");
                             }
                         }
@@ -582,6 +606,14 @@ class ProjectTask extends AbstractModel
                     'flow' => $flowData,
                     'change' => [$currentFlowItem?->name, $newFlowItem->name]
                 ]);
+                ProjectTaskFlowChange::createInstance([
+                    'task_id' => $this->id,
+                    'userid' => User::userid(),
+                    'before_flow_item_id' => $flowData['flow_item_id'],
+                    'before_flow_item_name' => $flowData['flow_item_name'],
+                    'after_flow_item_id' => $this->flow_item_id,
+                    'after_flow_item_name' => $this->flow_item_name,
+                ])->save();
             }
             // 状态
             if (Arr::exists($data, 'complete_at')) {
@@ -725,10 +757,13 @@ class ProjectTask extends AbstractModel
                         }
                     });
                 }
-                $newStringAt = $this->start_at ? ($oldAt[0]->toDateTimeString() . '~' . $oldAt[1]->toDateTimeString()) : '';
+                $newStringAt = $this->start_at ? ($this->start_at->toDateTimeString() . '~' . $this->end_at->toDateTimeString()) : '';
                 $this->addLog("修改{任务}时间", [
                     'change' => [$oldStringAt, $newStringAt]
                 ]);
+
+                //修改计划时间需要重置任务邮件提醒日志
+                ProjectTaskMailLog::whereTaskId($this->id)->delete();
             }
             // 以下紧顶级任务可修改
             if ($this->parent_id === 0) {
@@ -786,12 +821,13 @@ class ProjectTask extends AbstractModel
                 }
                 // 内容
                 if (Arr::exists($data, 'content')) {
-                    ProjectTaskContent::updateInsert([
+                    ProjectTaskContent::createInstance([
                         'project_id' => $this->project_id,
                         'task_id' => $this->id,
-                    ], [
-                        'content' => $data['content'],
-                    ]);
+                        'content' => [
+                            'url' => ProjectTaskContent::saveContent($this->id, $data['content'])
+                        ],
+                    ])->save();
                     $this->desc = Base::getHtml($data['content'], 100);
                     $this->addLog("修改{任务}详细描述");
                     $updateMarking['is_update_content'] = true;
@@ -889,6 +925,44 @@ class ProjectTask extends AbstractModel
             return 0;
         }
         return $user->owner ? 2 : 1;
+    }
+
+    /**
+     * 权限版本
+     * @param int $level 1-负责人，2-协助人/负责人，3-创建人/协助人/负责人
+     * @return bool
+     */
+    public function permission($level = 1)
+    {
+        if ($level >= 3 && $this->isCreater()) {
+            return true;
+        }
+        if ($level >= 2 && $this->isAssister()) {
+            return true;
+        }
+        return $this->isOwner();
+    }
+
+    /**
+     * 判断是否创建者
+     * @return bool
+     */
+    public function isCreater()
+    {
+        return $this->userid == User::userid();
+    }
+
+    /**
+     * 判断是否协助人员
+     * @return bool
+     */
+    public function isAssister()
+    {
+        $row = $this;
+        while ($row->parent_id > 0) {
+            $row = self::find($row->parent_id);
+        }
+        return ProjectTaskUser::whereTaskId($row->id)->whereUserid(User::userid())->whereOwner(0)->exists();
     }
 
     /**
@@ -1017,11 +1091,35 @@ class ProjectTask extends AbstractModel
                 $dialog?->deleteDialog();
             }
             self::whereParentId($this->id)->delete();
+            $this->deleted_userid = User::userid();
+            $this->save();
             $this->addLog("删除{任务}");
             $this->delete();
         });
         if ($pushMsg) {
             $this->pushMsg('delete');
+        }
+        return true;
+    }
+
+    /**
+     * 还原任务
+     * @param bool $pushMsg 是否推送
+     * @return bool
+     */
+    public function recoveryTask($pushMsg = true)
+    {
+        AbstractModel::transaction(function () {
+            if ($this->dialog_id) {
+                $dialog = WebSocketDialog::withTrashed()->find($this->dialog_id);
+                $dialog?->recoveryDialog();
+            }
+            self::whereParentId($this->id)->withTrashed()->restore();
+            $this->addLog("还原{任务}");
+            $this->restore();
+        });
+        if ($pushMsg) {
+            $this->pushMsg('restore');
         }
         return true;
     }
@@ -1120,22 +1218,29 @@ class ProjectTask extends AbstractModel
      * 获取任务（会员有任务权限 或 会员存在项目内）
      * @param int $task_id
      * @param bool $archived true:仅限未归档, false:仅限已归档, null:不限制
-     * @param int|bool $mustOwner 0|false:不限制, 1|true:限制任务或项目负责人, 2:已有负责人才限制任务或项目负责人(子任务时如果是主任务负责人也可以)
+     * @param bool $trashed true:仅限未删除, false:仅限已删除, null:不限制
+     * @param int|bool $permission 0|false:不限制, 1|true:限制项目负责人、任务负责人、协助人员及任务创建者, 2:已有负责人才限制true (子任务时如果是主任务负责人也可以)
      * @param array $with
      * @return self
      */
-    public static function userTask($task_id, $archived = true, $mustOwner = 0, $with = [])
+    public static function userTask($task_id, $archived = true, $trashed = true, $permission = false, $with = [])
     {
-        $task = self::with($with)->allData()->where("project_tasks.id", intval($task_id))->first();
+        $builder = self::with($with)->allData()->where("project_tasks.id", intval($task_id));
+        if ($trashed === false) {
+            $builder->onlyTrashed();
+        } elseif ($trashed === null) {
+            $builder->withTrashed();
+        }
+        $task = $builder->first();
         //
         if (empty($task)) {
-            throw new ApiException('任务不存在', [ 'task_id' => $task_id ], -4002);
+            throw new ApiException('任务不存在', ['task_id' => $task_id], -4002);
         }
         if ($archived === true && $task->archived_at != null) {
-            throw new ApiException('任务已归档', [ 'task_id' => $task_id ]);
+            throw new ApiException('任务已归档', ['task_id' => $task_id]);
         }
         if ($archived === false && $task->archived_at == null) {
-            throw new ApiException('任务未归档', [ 'task_id' => $task_id ]);
+            throw new ApiException('任务未归档', ['task_id' => $task_id]);
         }
         //
         try {
@@ -1150,11 +1255,11 @@ class ProjectTask extends AbstractModel
             }
         }
         //
-        if ($mustOwner === 2) {
-            $mustOwner = $task->hasOwner() ? 1 : 0;
+        if ($permission === 2) {
+            $permission = $task->hasOwner() ? 1 : 0;
         }
-        if (($mustOwner === 1 || $mustOwner === true) && !$task->isOwner() && !$project->owner) {
-            throw new ApiException('仅限项目或任务负责人操作');
+        if (($permission === 1 || $permission === true) && !$project->owner && !$task->permission(3)) {
+            throw new ApiException('仅限项目负责人、任务负责人、协助人员或任务创建者操作');
         }
         //
         return $task;

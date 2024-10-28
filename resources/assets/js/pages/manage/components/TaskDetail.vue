@@ -4,6 +4,7 @@
         <div class="subtask-icon">
             <TaskMenu
                 :ref="`taskMenu_${taskDetail.id}`"
+                :disabled="taskId === 0"
                 :task="taskDetail"
                 :load-status="taskDetail.loading === true"
                 @on-update="getLogLists"/>
@@ -14,11 +15,12 @@
         <div class="subtask-name">
             <Input
                 v-model="taskDetail.name"
+                ref="name"
                 type="textarea"
                 :rows="1"
                 :autosize="{ minRows: 1, maxRows: 8 }"
                 :maxlength="255"
-                @on-blur="updateData('name')"
+                @on-blur="updateBlur('name')"
                 @on-keydown="onNameKeydown"/>
         </div>
         <DatePicker
@@ -73,6 +75,7 @@
             <div class="head">
                 <TaskMenu
                     :ref="`taskMenu_${taskDetail.id}`"
+                    :disabled="taskId === 0"
                     :task="taskDetail"
                     class="icon"
                     size="medium"
@@ -121,6 +124,7 @@
                     </ETooltip>
                     <div class="menu">
                         <TaskMenu
+                            :disabled="taskId === 0"
                             :task="taskDetail"
                             icon="ios-more"
                             completed-icon="ios-more"
@@ -134,11 +138,12 @@
                 <div class="title">
                     <Input
                         v-model="taskDetail.name"
+                        ref="name"
                         type="textarea"
                         :rows="1"
                         :autosize="{ minRows: 1, maxRows: 8 }"
                         :maxlength="255"
-                        @on-blur="updateData('name')"
+                        @on-blur="updateBlur('name')"
                         @on-keydown="onNameKeydown"/>
                 </div>
                 <div class="desc">
@@ -149,8 +154,7 @@
                         :options="taskOptions"
                         :option-full="taskOptionFull"
                         :placeholder="$L('详细描述...')"
-                        @on-blur="updateData('content')"
-                        @editorSave="updateData('content')"
+                        @on-blur="updateBlur('content')"
                         inline/>
                 </div>
                 <Form class="items" label-position="left" label-width="auto" @submit.native.prevent>
@@ -261,7 +265,7 @@
                                         <div @click="openTime" class="time">{{taskDetail.end_at ? cutTime : '--'}}</div>
                                         <template v-if="!taskDetail.complete_at && taskDetail.end_at">
                                             <Tag v-if="within24Hours(taskDetail.end_at)" color="blue"><i class="taskfont">&#xe71d;</i>{{expiresFormat(taskDetail.end_at)}}</Tag>
-                                            <Tag v-if="taskDetail.overdue" color="red">{{$L('超期未完成')}}</Tag>
+                                            <Tag v-if="isOverdue(taskDetail)" color="red">{{$L('超期未完成')}}</Tag>
                                         </template>
                                     </div>
                                 </DatePicker>
@@ -273,6 +277,7 @@
                             <i class="taskfont">&#xe6e6;</i>{{$L('附件')}}
                         </div>
                         <ul class="item-content file">
+                            <li v-if="taskDetail.file_num > 50" class="tip">{{$L(`共${taskDetail.file_num}个文件，仅显示最新50个`)}}</li>
                             <li v-for="file in fileList">
                                 <img v-if="file.id" class="file-ext" :src="file.thumb"/>
                                 <Loading v-else class="file-load"/>
@@ -307,7 +312,14 @@
                             <i class="taskfont">&#xe6f0;</i>{{$L('子任务')}}
                         </div>
                         <ul class="item-content subtask">
-                            <TaskDetail v-for="(task, key) in subList" :key="key" :task-id="task.id" :open-task="task" :main-end-at="taskDetail.end_at"/>
+                            <TaskDetail
+                                v-for="(task, key) in subList"
+                                :ref="`subTask_${task.id}`"
+                                :key="key"
+                                :task-id="task.id"
+                                :open-task="task"
+                                :main-end-at="taskDetail.end_at"
+                                :can-update-blur="canUpdateBlur"/>
                         </ul>
                         <ul :class="['item-content', subList.length === 0 ? 'nosub' : '']">
                             <li>
@@ -399,7 +411,10 @@
                             @on-input-paste="msgPasteDrag"/>
                         <div class="no-send" @click="msgDialog">
                             <Loading v-if="sendLoad > 0"/>
-                            <Icon v-else type="md-send" />
+                            <template v-else>
+                                <Badge :count="taskDetail.msg_num"/>
+                                <Icon type="md-send" />
+                            </template>
                         </div>
                     </div>
                     <div v-if="dialogDrag" class="drag-over" @click="dialogDrag=false">
@@ -440,6 +455,11 @@ export default {
         },
         mainEndAt: {
             default: null
+        },
+        // 允许失去焦点更新
+        canUpdateBlur: {
+            type: Boolean,
+            default: true
         },
     },
     data() {
@@ -492,7 +512,7 @@ export default {
                 autoresize_bottom_margin: 2,
                 min_height: 200,
                 max_height: 380,
-                contextmenu: 'bold italic underline forecolor backcolor | codesample | uploadImages browseImages | preview screenload',
+                contextmenu: 'bold italic underline forecolor backcolor | codesample | uploadImages imagePreview | preview screenload',
                 valid_elements : 'a[href|target=_blank],em,strong/b,div[align],span[style],a,br,p,img[src|alt|witdh|height],pre[class],code',
                 toolbar: false
             },
@@ -579,7 +599,7 @@ export default {
             return this.taskFiles.filter(({task_id}) => {
                 return task_id == this.taskId
             }).sort((a, b) => {
-                return a.id - b.id;
+                return b.id - a.id;
             });
         },
 
@@ -613,8 +633,8 @@ export default {
 
         cutTime() {
             const {taskDetail} = this;
-            let start_at = Math.round($A.Date(taskDetail.start_at).getTime() / 1000);
-            let end_at = Math.round($A.Date(taskDetail.end_at).getTime() / 1000);
+            let start_at = $A.Date(taskDetail.start_at, true);
+            let end_at = $A.Date(taskDetail.end_at, true);
             let string = "";
             if ($A.formatDate('Y/m/d', start_at) == $A.formatDate('Y/m/d', end_at)) {
                 string = $A.formatDate('Y/m/d H:i', start_at) + " ~ " + $A.formatDate('H:i', end_at)
@@ -694,6 +714,9 @@ export default {
         openTask: {
             handler(data) {
                 this.taskDetail = $A.cloneJSON(data);
+                this.$nextTick(() => {
+                    this.$refs.name && this.$refs.name.resizeTextarea();
+                })
             },
             immediate: true,
             deep: true
@@ -722,29 +745,27 @@ export default {
     },
 
     methods: {
-        initLanguage() {
-
-        },
-
         innerHeightListener() {
             this.innerHeight = Math.min(1100, window.innerHeight);
         },
 
         within24Hours(date) {
-            return Math.round($A.Date(date).getTime() / 1000) - this.nowTime < 86400
+            return $A.Date(date, true) - this.nowTime < 86400
         },
 
         expiresFormat(date) {
             return $A.countDownFormat(date, this.nowTime)
         },
 
+        isOverdue(taskDetail) {
+            if (taskDetail.overdue) {
+                return true;
+            }
+            return $A.Date(taskDetail.end_at, true) < this.nowTime;
+        },
+
         onNameKeydown(e) {
-            if (e.keyCode === 83) {
-                if (e.metaKey || e.ctrlKey) {
-                    e.preventDefault();
-                    this.updateData('name');
-                }
-            } else if (e.keyCode === 13) {
+            if (e.keyCode === 13) {
                 if (!e.shiftKey) {
                     e.preventDefault();
                     this.updateData('name');
@@ -752,7 +773,51 @@ export default {
             }
         },
 
+        checkUpdate(action) {
+            let isModify = false;
+            if (this.openTask.name != this.taskDetail.name) {
+                isModify = true;
+                if (action === true) {
+                    this.updateData('name');
+                } else {
+                    action === false && this.$refs.name.focus();
+                    return true
+                }
+            }
+            if (this.$refs.desc && this.$refs.desc.getContent() != this.taskContent) {
+                isModify = true;
+                if (action === true) {
+                    this.updateData('content');
+                } else {
+                    action === false && this.$refs.desc.focus();
+                    return true
+                }
+            }
+            if (this.addsubShow && this.addsubName) {
+                isModify = true;
+                if (action === true) {
+                    this.onAddsub();
+                } else {
+                    action === false && this.$refs.addsub.focus();
+                    return true
+                }
+            }
+            this.subList.some(({id}) => {
+                if (this.$refs[`subTask_${id}`][0].checkUpdate(action)) {
+                    isModify = true;
+                }
+            })
+            return isModify;
+        },
+
+        updateBlur(action, params) {
+            if (this.canUpdateBlur) {
+                this.updateData(action, params)
+            }
+        },
+
         updateData(action, params) {
+            let successCallback = null;
             switch (action) {
                 case 'priority':
                     this.$set(this.taskDetail, 'p_level', params.priority)
@@ -760,14 +825,23 @@ export default {
                     this.$set(this.taskDetail, 'p_color', params.color)
                     action = ['p_level', 'p_name', 'p_color'];
                     break;
+
                 case 'times':
                     this.$set(this.taskDetail, 'times', [params.start_at, params.end_at])
                     break;
+
                 case 'content':
-                    if (this.$refs.desc.getContent() == this.taskContent) {
+                    const content = this.$refs.desc.getContent();
+                    if (content == this.taskContent) {
                         return;
                     }
-                    this.$set(this.taskDetail, 'content', this.$refs.desc.getContent())
+                    this.$set(this.taskDetail, 'content', content)
+                    successCallback = () => {
+                        this.$store.dispatch("saveTaskContent", {
+                            task_id: this.taskId,
+                            content
+                        })
+                    }
                     break;
             }
             //
@@ -783,6 +857,7 @@ export default {
             //
             this.$store.dispatch("taskUpdate", dataJson).then(({msg}) => {
                 $A.messageSuccess(msg);
+                if (typeof successCallback === "function") successCallback();
             }).catch(({msg}) => {
                 $A.modalError(msg);
             })
@@ -913,12 +988,11 @@ export default {
 
         addsubKeydown(e) {
             if (e.keyCode === 13) {
-                if (e.shiftKey) {
+                if (e.shiftKey || this.addsubLoad > 0) {
                     return;
                 }
                 e.preventDefault();
                 this.onAddsub();
-
             }
         },
 
@@ -1030,7 +1104,7 @@ export default {
                                 };
                                 this.msgFile = [];
                                 this.msgText = "";
-                                this.goForward({path: '/manage/messenger', query: {_: $A.randomString(6)}});
+                                this.goForward({name: 'manage-messenger', query: {_: $A.randomString(6)}});
                                 $A.setStorage("messenger::dialogId", data.dialog_id)
                                 this.$store.state.dialogOpenId = data.dialog_id;
                                 this.$store.dispatch('openTask', 0);
@@ -1116,6 +1190,8 @@ export default {
 
         openNewWin() {
             let config = {
+                title: this.taskDetail.name,
+                titleFixed: true,
                 parent: null,
                 width: Math.min(window.screen.availWidth, this.$el.clientWidth + 72),
                 height: Math.min(window.screen.availHeight, this.$el.clientHeight + 72),
@@ -1126,9 +1202,7 @@ export default {
                 config.minWidth = 800;
                 config.minHeight = 600;
             }
-            this.$Electron.ipcRenderer.send('windowRouter', {
-                title: this.taskDetail.name,
-                titleFixed: true,
+            this.$Electron.sendMessage('windowRouter', {
                 name: 'task-' + this.taskDetail.id,
                 path: "/single/task/" + this.taskDetail.id,
                 force: false,
@@ -1139,7 +1213,7 @@ export default {
 
         resizeDialog() {
             return new Promise(resolve => {
-                this.$Electron.ipcRenderer.sendSync('windowSize', {
+                this.$Electron.sendSyncMessage('windowSize', {
                     width: Math.max(1100, window.innerWidth),
                     height: Math.max(720, window.innerHeight),
                     minWidth: 800,
@@ -1160,14 +1234,27 @@ export default {
         },
 
         viewFile(file) {
+            if (['jpg', 'jpeg', 'gif', 'png'].includes(file.ext)) {
+                const list = this.fileList.filter(item => ['jpg', 'jpeg', 'gif', 'png'].includes(item.ext))
+                const index = list.findIndex(item => item.id === file.id);
+                if (index > -1) {
+                    this.$store.state.previewImageIndex = index;
+                    this.$store.state.previewImageList = list.map(({path}) => path);
+                } else {
+                    this.$store.state.previewImageIndex = 0;
+                    this.$store.state.previewImageList = [file.path];
+                }
+                return
+            }
             if (this.$Electron) {
-                this.$Electron.ipcRenderer.send('windowRouter', {
-                    title: `${file.name} (${$A.bytesToSize(file.size)})`,
-                    titleFixed: true,
+                this.$Electron.sendMessage('windowRouter', {
                     name: 'file-task-' + file.id,
                     path: "/single/file/task/" + file.id,
+                    userAgent: "/hideenOfficeTitle/",
                     force: false,
                     config: {
+                        title: `${file.name} (${$A.bytesToSize(file.size)})`,
+                        titleFixed: true,
                         parent: null,
                         width: Math.min(window.screen.availWidth, 1440),
                         height: Math.min(window.screen.availHeight, 900),
@@ -1184,7 +1271,7 @@ export default {
                 content: `${file.name} (${$A.bytesToSize(file.size)})`,
                 okText: '立即下载',
                 onOk: () => {
-                    $A.downFile($A.apiUrl(`project/task/filedown?file_id=${file.id}&token=${this.userToken}`))
+                    this.$store.dispatch('downUrl', $A.apiUrl(`project/task/filedown?file_id=${file.id}`))
                 }
             });
         }

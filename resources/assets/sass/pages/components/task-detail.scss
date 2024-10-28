@@ -48,6 +48,8 @@
                 }
             }
             .flow {
+                display: flex;
+                align-items: center;
                 margin-right: 10px;
                 > span {
                     font-size: 14px;
@@ -60,21 +62,33 @@
                     display: inline-block;
                     text-align: center;
                     cursor: pointer;
-                    &.start,
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    overflow: hidden;
                     &.archived {
-                        background-color: rgba(38, 38, 38, 0.05);
-                        border-color: rgba(38, 38, 38, 0.05);
-                        color: #595959;
+                        background-color: rgba($flow-status-archived-color, 0.1);
+                        border-color: rgba($flow-status-archived-color, 0.1);
+                        color: $flow-status-archived-color;
+                    }
+                    &.start {
+                        background-color: rgba($flow-status-start-color, 0.1);
+                        border-color: rgba($flow-status-start-color, 0.1);
+                        color: $flow-status-start-color;
                     }
                     &.progress {
-                        background-color: rgba(27, 154, 238, 0.1);
-                        border-color: rgba(27, 154, 238, 0.1);
-                        color: #0171c2;
+                        background-color: rgba($flow-status-progress-color, 0.1);;
+                        border-color: rgba($flow-status-progress-color, 0.1);;
+                        color: $flow-status-progress-color;
+                    }
+                    &.test {
+                        background-color: rgba($flow-status-test-color, 0.1);;
+                        border-color: rgba($flow-status-test-color, 0.1);;
+                        color: $flow-status-test-color;
                     }
                     &.end {
-                        background-color: rgba(21, 173, 49, 0.1);
-                        border-color: rgba(21, 173, 49, 0.1);
-                        color: #038a24;
+                        background-color: rgba($flow-status-end-color, 0.1);;
+                        border-color: rgba($flow-status-end-color, 0.1);;
+                        color: $flow-status-end-color;
                     }
                 }
             }
@@ -163,6 +177,13 @@
                     img {
                         max-width: 100%;
                     }
+                    pre {
+                        padding: 14px;
+                        margin: 7px 0;
+                        overflow: auto;
+                        background: #f5f2f0;
+                        border-radius: 5px;
+                    }
                     &[data-mce-placeholder]:not(.mce-visualblocks)::before {
                         color: #bbbbbb;
                     }
@@ -236,6 +257,9 @@
                         margin-bottom: -3px;
                         > li {
                             margin-bottom: 2px;
+                            &.tip {
+                                color: #999;
+                            }
                             .file-load {
                                 margin: 0;
                                 padding: 2px;
@@ -335,19 +359,24 @@
                                     text-align: center;
                                     cursor: pointer;
                                     &.start {
-                                        background-color: rgba(38, 38, 38, 0.05);
-                                        border-color: rgba(38, 38, 38, 0.05);
-                                        color: #595959;
+                                        background-color: rgba($flow-status-start-color, 0.1);
+                                        border-color: rgba($flow-status-start-color, 0.1);
+                                        color: $flow-status-start-color;
                                     }
                                     &.progress {
-                                        background-color: rgba(27, 154, 238, 0.1);
-                                        border-color: rgba(27, 154, 238, 0.1);
-                                        color: #0171c2;
+                                        background-color: rgba($flow-status-progress-color, 0.1);;
+                                        border-color: rgba($flow-status-progress-color, 0.1);;
+                                        color: $flow-status-progress-color;
+                                    }
+                                    &.test {
+                                        background-color: rgba($flow-status-test-color, 0.1);;
+                                        border-color: rgba($flow-status-test-color, 0.1);;
+                                        color: $flow-status-test-color;
                                     }
                                     &.end {
-                                        background-color: rgba(21, 173, 49, 0.1);
-                                        border-color: rgba(21, 173, 49, 0.1);
-                                        color: #038a24;
+                                        background-color: rgba($flow-status-end-color, 0.1);;
+                                        border-color: rgba($flow-status-end-color, 0.1);;
+                                        color: $flow-status-end-color;
                                     }
                                 }
                             }
@@ -433,6 +462,7 @@
                 align-items: center;
                 margin-top: 6px;
                 height: 32px;
+                white-space: nowrap;
                 > i {
                     font-size: 14px;
                     padding-right: 8px;
@@ -554,6 +584,12 @@
                 }
                 .no-send {
                     display: none;
+                    .ivu-badge {
+                        position: absolute;
+                        transform: scale(0.6);
+                        top: 5px;
+                        left: 4px;
+                    }
                 }
             }
             .drag-over {

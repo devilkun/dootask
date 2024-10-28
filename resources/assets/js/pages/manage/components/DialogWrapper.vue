@@ -6,27 +6,40 @@
         @dragover.prevent="chatDragOver(true, $event)"
         @dragleave.prevent="chatDragOver(false, $event)">
         <slot name="head">
-            <div class="dialog-title" :class="{completed:$A.dialogCompleted(dialogData)}">
-                <div class="main-title">
-                    <template v-for="tag in $A.dialogTags(dialogData)" v-if="tag.color != 'success'">
-                        <Tag :color="tag.color" :fade="false">{{$L(tag.text)}}</Tag>
+            <div class="dialog-nav" :class="{completed:$A.dialogCompleted(dialogData)}">
+                <div class="dialog-avatar">
+                    <template v-if="dialogData.type=='group'">
+                        <i v-if="dialogData.group_type=='project'" class="taskfont icon-avatar project">&#xe6f9;</i>
+                        <i v-else-if="dialogData.group_type=='task'" class="taskfont icon-avatar task">&#xe6f4;</i>
+                        <Icon v-else class="icon-avatar" type="ios-people" />
                     </template>
-                    <h2>{{dialogData.name}}</h2>
-                    <em v-if="peopleNum > 0">({{peopleNum}})</em>
+                    <div v-else-if="dialogData.dialog_user" class="user-avatar"><UserAvatar :userid="dialogData.dialog_user.userid" :size="42"/></div>
+                    <Icon v-else class="icon-avatar" type="md-person" />
                 </div>
-                <template v-if="dialogData.type === 'group'">
-                    <div v-if="dialogData.group_type === 'project'" class="sub-title pointer" @click="openProject">
-                        {{$L('项目聊天室')}} {{$L('打开项目管理')}}
+                <div class="dialog-title">
+                    <div class="main-title">
+                        <template v-for="tag in $A.dialogTags(dialogData)" v-if="tag.color != 'success'">
+                            <Tag :color="tag.color" :fade="false">{{$L(tag.text)}}</Tag>
+                        </template>
+                        <h2>{{dialogData.name}}</h2>
+                        <em v-if="peopleNum > 0">({{peopleNum}})</em>
+                        <label v-if="dialogData.top_at" class="top-text">{{$L('置顶')}}</label>
                     </div>
-                    <div v-else-if="dialogData.group_type === 'task'" class="sub-title pointer" @click="openTask">
-                        {{$L('任务聊天室')}} {{$L('查看任务详情')}}
-                    </div>
-                </template>
+                    <template v-if="dialogData.type === 'group'">
+                        <div v-if="dialogData.group_type === 'project'" class="sub-title pointer" @click="openProject">
+                            {{$L('项目聊天室')}} {{$L('打开项目管理')}}
+                        </div>
+                        <div v-else-if="dialogData.group_type === 'task'" class="sub-title pointer" @click="openTask">
+                            {{$L('任务聊天室')}} {{$L('查看任务详情')}}
+                        </div>
+                    </template>
+                </div>
             </div>
         </slot>
         <ScrollerY
             ref="scroller"
             class="dialog-scroller overlay-y"
+            :style="{opacity: visible ? 1 : 0}"
             :auto-bottom="isAutoBottom"
             @on-scroll="chatScroll"
             static>
@@ -60,7 +73,7 @@
             </div>
         </ScrollerY>
         <div :class="['dialog-footer', msgNew > 0 && dialogMsgList.length > 0 ? 'newmsg' : '']" @click="onActive">
-            <div class="dialog-newmsg" @click="autoToBottom">{{$L('有' + msgNew + '条新消息')}}</div>
+            <div class="dialog-newmsg" @click="onToBottom">{{$L('有' + msgNew + '条新消息')}}</div>
             <slot name="inputBefore"/>
             <DragInput
                 ref="input"
@@ -90,11 +103,13 @@
             <div class="drag-text">{{$L('拖动到这里发送')}}</div>
         </div>
 
+        <!--拖动发送提示-->
         <Modal
             v-model="pasteShow"
             :title="$L(pasteTitle)"
             :cancel-text="$L('取消')"
             :ok-text="$L('发送')"
+            :enter-ok="true"
             @on-ok="pasteSend">
             <div class="dialog-wrapper-paste">
                 <template v-for="item in pasteItem">
@@ -126,6 +141,7 @@ export default {
 
     data() {
         return {
+            visible: true,
             autoBottom: true,
             autoInterval: null,
 
@@ -163,6 +179,7 @@ export default {
             'userId',
             'cacheDialogs',
             'dialogMsgs',
+            'wsOpenNum',
         ]),
 
         dialogData() {
@@ -239,13 +256,21 @@ export default {
         dialogId: {
             handler(id) {
                 if (id) {
-                    this.autoBottom = true;
                     this.msgNew = 0;
                     this.topId = -1;
-                    this.$store.dispatch("getDialogMsgs", id);
+                    this.visible = false;
+                    this.$store.dispatch("getDialogMsgs", id).then(_ => {
+                        this.onToBottom();
+                        this.visible = true;
+                    });
                 }
             },
             immediate: true
+        },
+
+        wsOpenNum(num) {
+            if (num <= 1) return
+            this.$store.dispatch("getDialogMsgs", this.dialogId);
         }
     },
 
@@ -271,7 +296,7 @@ export default {
             if (!this.isDesktop) {
                 this.$refs.input.blur();
             }
-            this.autoToBottom();
+            this.onToBottom();
             this.onActive();
             //
             this.$store.dispatch("call", {
@@ -372,7 +397,7 @@ export default {
                     if (!this.isDesktop) {
                         this.$refs.input.blur();
                     }
-                    this.autoToBottom();
+                    this.onToBottom();
                     this.onActive();
                     break;
 
@@ -412,7 +437,7 @@ export default {
                     this.autoBottom = false;
                     break;
             }
-            if (res.scale === 1) {
+            if (res.scale >= 1) {
                 this.msgNew = 0;
                 this.autoBottom = true;
             }
@@ -432,7 +457,8 @@ export default {
             this.$emit("on-active");
         },
 
-        autoToBottom() {
+        onToBottom() {
+            this.autoBottom = true;
             this.$refs.scroller && this.$refs.scroller.autoToBottom();
         },
 
@@ -455,24 +481,17 @@ export default {
             this.$store.dispatch('getDialogMoreMsgs', this.dialogId).then(() => {
                 this.$nextTick(() => {
                     this.topId = topId;
-                    let dom = document.getElementById("view_" + topId);
-                    if (dom) {
-                        try {
-                            dom.scrollIntoView(true);
-                        } catch (e) {
-                            scrollIntoView(dom, {
-                                behavior: 'instant',
-                                inline: 'start',
-                            })
-                        }
-                    }
+                    $A.scrollToView(document.getElementById("view_" + topId), {
+                        behavior: 'instant',
+                        inline: 'start',
+                    })
                 });
             }).catch(() => {})
         },
 
         addDialogMsg() {
             if (this.isAutoBottom) {
-                this.$nextTick(this.autoToBottom);
+                this.$nextTick(this.onToBottom);
             } else {
                 this.$nextTick(() => {
                     if (this.$refs.scroller && this.$refs.scroller.scrollInfo().scrollE > 10) {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exceptions\ApiException;
+use App\Models\AbstractModel;
 use App\Models\ProjectTask;
 use App\Models\Report;
 use App\Models\ReportReceive;
@@ -31,8 +32,9 @@ class ReportController extends AbstractController
      * @apiGroup report
      * @apiName my
      *
-     * @apiParam {String} [type]        汇报类型，weekly:周报，daily:日报
-     * @apiParam {Array} [created_at]   汇报时间
+     * @apiParam {Object} [keys]             搜索条件
+     * - keys.type: 汇报类型，weekly:周报，daily:日报
+     * - keys.created_at: 汇报时间
      * @apiParam {Number} [page]        当前页，默认:1
      * @apiParam {Number} [pagesize]    每页显示数量，默认:20，最大:50
      *
@@ -43,17 +45,19 @@ class ReportController extends AbstractController
     public function my(): array
     {
         $user = User::auth();
-        // 搜索当前用户
+        //
         $builder = Report::with(['receivesUser'])->whereUserid($user->userid);
-        $type = trim(Request::input('type'));
-        $createAt = Request::input('created_at');
-        in_array($type, [Report::WEEKLY, Report::DAILY]) && $builder->whereType($type);
-        $whereArray = [];
-        if (is_array($createAt)) {
-            if ($createAt[0] > 0) $whereArray[] = ['created_at', '>=', date('Y-m-d H:i:s', Base::dayTimeF($createAt[0]))];
-            if ($createAt[1] > 0) $whereArray[] = ['created_at', '<=', date('Y-m-d H:i:s', Base::dayTimeE($createAt[1]))];
+        $keys = Request::input('keys');
+        if (is_array($keys)) {
+            if (in_array($keys['type'], [Report::WEEKLY, Report::DAILY])) {
+                $builder->whereType($keys['type']);
+            }
+            if (is_array($keys['created_at'])) {
+                if ($keys['created_at'][0] > 0) $builder->where('created_at', '>=', date('Y-m-d H:i:s', Base::dayTimeF($keys['created_at'][0])));
+                if ($keys['created_at'][1] > 0) $builder->where('created_at', '<=', date('Y-m-d H:i:s', Base::dayTimeE($keys['created_at'][1])));
+            }
         }
-        $list = $builder->where($whereArray)->orderByDesc('created_at')->paginate(Base::getPaginate(50, 20));
+        $list = $builder->orderByDesc('created_at')->paginate(Base::getPaginate(50, 20));
         return Base::retSuccess('success', $list);
     }
 
@@ -64,9 +68,10 @@ class ReportController extends AbstractController
      * @apiGroup report
      * @apiName receive
      *
-     * @apiParam {String} [username]    会员名
-     * @apiParam {String} [type]        汇报类型，weekly:周报，daily:日报
-     * @apiParam {Array} [created_at]   汇报时间
+     * @apiParam {Object} [keys]             搜索条件
+     * - keys.key: 关键词
+     * - keys.type: 汇报类型，weekly:周报，daily:日报
+     * - keys.created_at: 汇报时间
      * @apiParam {Number} [page]        当前页，默认:1
      * @apiParam {Number} [pagesize]    每页显示数量，默认:20，最大:50
      *
@@ -81,21 +86,24 @@ class ReportController extends AbstractController
         $builder->whereHas("receivesUser", function ($query) use ($user) {
             $query->where("report_receives.userid", $user->userid);
         });
-        $type = trim(Request::input('type'));
-        $createAt = Request::input('created_at');
-        $username = trim(Request::input('username', ''));
-        $builder->whereHas('sendUser', function ($query) use ($username) {
-            if (!empty($username)) {
-                $query->where('users.email', 'LIKE', '%' . $username . '%');
+        $keys = Request::input('keys');
+        if (is_array($keys)) {
+            if ($keys['key']) {
+                $builder->where(function($query) use ($keys) {
+                    $query->whereHas('sendUser', function ($q2) use ($keys) {
+                        $q2->where("users.email", "LIKE", "%{$keys['key']}%");
+                    })->orWhere("title", "LIKE", "%{$keys['key']}%");
+                });
             }
-        });
-        in_array($type, [Report::WEEKLY, Report::DAILY]) && $builder->whereType($type);
-        $whereArray = [];
-        if (is_array($createAt)) {
-            if ($createAt[0] > 0) $whereArray[] = ['created_at', '>=', date('Y-m-d H:i:s', Base::dayTimeF($createAt[0]))];
-            if ($createAt[1] > 0) $whereArray[] = ['created_at', '<=', date('Y-m-d H:i:s', Base::dayTimeE($createAt[1]))];
+            if (in_array($keys['type'], [Report::WEEKLY, Report::DAILY])) {
+                $builder->whereType($keys['type']);
+            }
+            if (is_array($keys['created_at'])) {
+                if ($keys['created_at'][0] > 0) $builder->where('created_at', '>=', date('Y-m-d H:i:s', Base::dayTimeF($keys['created_at'][0])));
+                if ($keys['created_at'][1] > 0) $builder->where('created_at', '<=', date('Y-m-d H:i:s', Base::dayTimeE($keys['created_at'][1])));
+            }
         }
-        $list = $builder->where($whereArray)->orderByDesc('created_at')->paginate(Base::getPaginate(50, 20));
+        $list = $builder->orderByDesc('created_at')->paginate(Base::getPaginate(50, 20));
         if ($list->items()) {
             foreach ($list->items() as $item) {
                 $item->receive_time = ReportReceive::query()->whereRid($item["id"])->whereUserid($user->userid)->value("receive_time");
@@ -173,7 +181,7 @@ class ReportController extends AbstractController
         }
 
         // 在事务中运行
-        Report::transaction(function () use ($input, $user) {
+        return AbstractModel::transaction(function () use ($input, $user) {
             $id = $input["id"];
             if ($id) {
                 // 编辑
@@ -224,8 +232,9 @@ class ReportController extends AbstractController
                 ];
                 Task::deliver(new PushTask($params, false));
             }
+            //
+            return Base::retSuccess('保存成功', $report);
         });
-        return Base::retSuccess('保存成功');
     }
 
     /**
@@ -273,7 +282,7 @@ class ReportController extends AbstractController
         }
         // 生成唯一标识
         $sign = Report::generateSign($type, 0, Carbon::instance($start_time));
-        $one = Report::query()->whereSign($sign)->whereType($type)->first();
+        $one = Report::whereSign($sign)->whereType($type)->first();
         // 如果已经提交了相关汇报
         if ($one && $id > 0) {
             return Base::retSuccess('success', [
@@ -282,7 +291,6 @@ class ReportController extends AbstractController
                 "id" => $one->id,
             ]);
         }
-
 
         // 已完成的任务
         $completeContent = "";
@@ -362,6 +370,7 @@ class ReportController extends AbstractController
      */
     public function detail(): array
     {
+        $user = User::auth();
         $id = intval(trim(Request::input("id")));
         if (empty($id))
             return Base::retError("缺少ID参数");
@@ -369,7 +378,6 @@ class ReportController extends AbstractController
         $one = Report::getOne($id);
         $one->type_val = $one->getRawOriginal("type");
 
-        $user = User::auth();
         // 标记为已读
         if (!empty($one->receivesUser)) {
             foreach ($one->receivesUser as $item) {

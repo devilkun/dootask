@@ -2,7 +2,7 @@
     <div class="page-login">
         <PageTitle :title="$L('登录')"/>
         <div class="login-body">
-            <div class="login-logo no-dark-mode"></div>
+            <div class="login-logo no-dark-mode" :class="{'can-click':needStartHome}" @click="goHome"></div>
             <div class="login-box">
                 <div class="login-title">{{welcomeTitle}}</div>
 
@@ -36,8 +36,8 @@
                         {{$L('设置')}}
                         <i class="taskfont">&#xe689;</i>
                     </div>
-                    <Dropdown-menu slot="list" class="login-setting-menu">
-                        <Dropdown placement="right-start" @on-click="setTheme">
+                    <DropdownMenu slot="list" class="login-setting-menu">
+                        <Dropdown placement="right-start" transfer @on-click="setTheme">
                             <DropdownItem>
                                 <div class="login-setting-item">
                                     {{$L('主题皮肤')}}
@@ -45,10 +45,14 @@
                                 </div>
                             </DropdownItem>
                             <DropdownMenu slot="list">
-                                <Dropdown-item v-for="(item, key) in themeList" :key="key" :name="item.value" :selected="themeMode === item.value">{{$L(item.name)}}</Dropdown-item>
+                                <DropdownItem
+                                    v-for="(item, key) in themeList"
+                                    :key="key"
+                                    :name="item.value"
+                                    :selected="themeMode === item.value">{{$L(item.name)}}</DropdownItem>
                             </DropdownMenu>
                         </Dropdown>
-                        <Dropdown placement="right-start" @on-click="setLanguage">
+                        <Dropdown placement="right-start" transfer @on-click="setLanguage">
                             <DropdownItem divided>
                                 <div class="login-setting-item">
                                     {{currentLanguage}}
@@ -56,10 +60,14 @@
                                 </div>
                             </DropdownItem>
                             <DropdownMenu slot="list">
-                                <Dropdown-item v-for="(item, key) in languageList" :key="key" :name="key" :selected="getLanguage() === key">{{item}}</Dropdown-item>
+                                <DropdownItem
+                                    v-for="(item, key) in languageList"
+                                    :key="key"
+                                    :name="key"
+                                    :selected="getLanguage() === key">{{item}}</DropdownItem>
                             </DropdownMenu>
                         </Dropdown>
-                    </Dropdown-menu>
+                    </DropdownMenu>
                 </Dropdown>
                 <div class="login-forgot">{{$L('忘记密码了？')}}<a href="javascript:void(0)" @click="forgotPassword">{{$L('重置密码')}}</a></div>
             </div>
@@ -77,17 +85,18 @@ export default {
             loadIng: 0,
 
             codeNeed: false,
-            codeUrl: $A.apiUrl('users/login/codeimg'),
+            codeUrl: $A.apiUrl('users/login/codeimg?_=' + Math.random()),
 
             loginType: 'login',
             loginJump: false,
+
             email: $A.getStorageString("cacheLoginEmail") || '',
             password: '',
             password2: '',
             code: '',
             invite: '',
 
-            demoAccount: {},
+            needStartHome: false,
 
             needInvite: false,
 
@@ -96,9 +105,10 @@ export default {
     },
     mounted() {
         this.getDemoAccount();
+        this.getNeedStartHome();
         //
         if (this.$Electron) {
-            this.chackServerUrl().catch(() => {});
+            this.chackServerUrl().catch(_ => {});
         } else {
             this.clearServerUrl();
         }
@@ -111,6 +121,13 @@ export default {
         if (this.subscribe) {
             this.subscribe.unsubscribe();
             this.subscribe = null;
+        }
+    },
+    activated() {
+        this.loginType = 'login'
+        //
+        if (this.$Electron) {
+            this.$Electron.sendMessage('subWindowDestroyAll')
         }
     },
     deactivated() {
@@ -133,7 +150,7 @@ export default {
         },
 
         welcomeTitle() {
-            let title = window.systemInfo.title || "Dootask";
+            let title = window.systemInfo.title || "DooTask";
             if (title == "PublicDooTask") {
                 return "Public DooTask"
             } else {
@@ -150,6 +167,13 @@ export default {
         }
     },
     watch: {
+        '$route' ({query}) {
+            if (query.type=='reg'){
+                this.$nextTick(()=>{
+                    this.loginType = "reg"
+                })
+            }
+        },
         loginType(val) {
             if (val == 'reg') {
                 this.getNeedInvite();
@@ -157,6 +181,12 @@ export default {
         }
     },
     methods: {
+        goHome() {
+            if (this.needStartHome) {
+                this.goForward({name: 'index'});
+            }
+        },
+
         setTheme(mode) {
             this.$store.dispatch("setTheme", mode)
         },
@@ -168,13 +198,25 @@ export default {
             this.$store.dispatch("call", {
                 url: 'system/demo',
             }).then(({data}) => {
-                this.demoAccount = data;
                 if (data.account) {
                     this.email = data.account;
                     this.password = data.password;
                 }
-            }).catch(() => {
-                this.demoAccount = {};
+            }).catch(_ => {
+                //
+            });
+        },
+
+        getNeedStartHome() {
+            if (this.isNotServer()) {
+                return;
+            }
+            this.$store.dispatch("call", {
+                url: "system/get/starthome",
+            }).then(({data}) => {
+                this.needStartHome = !!data.need_start;
+            }).catch(_ => {
+                this.needStartHome = false;
             });
         },
 
@@ -183,7 +225,7 @@ export default {
                 url: 'users/reg/needinvite',
             }).then(({data}) => {
                 this.needInvite = !!data.need;
-            }).catch(() => {
+            }).catch(_ => {
                 this.needInvite = false;
             });
         },
@@ -213,6 +255,7 @@ export default {
                             url: value + 'system/setting',
                         }).then(() => {
                             this.setServerUrl(value)
+                            cb()
                         }).catch(({msg}) => {
                             $A.modalError(msg || "服务器地址无效", 301);
                             cb()
@@ -226,7 +269,7 @@ export default {
 
         chackServerUrl(tip) {
             return new Promise((resolve, reject) => {
-                if (this.$Electron && this.isNotServer()) {
+                if (this.isNotServer()) {
                     if (tip === true) {
                         $A.messageWarning("请设置服务器")
                     }
@@ -251,7 +294,7 @@ export default {
 
         isNotServer() {
             let apiHome = $A.getDomain(window.systemInfo.apiUrl)
-            return apiHome == "" || apiHome == "public"
+            return this.$Electron && (apiHome == "" || apiHome == "public")
         },
 
         onBlur() {
@@ -269,7 +312,7 @@ export default {
                 this.loadIng--;
                 this.reCode();
                 this.codeNeed = true;
-            }).catch(() => {
+            }).catch(_ => {
                 this.loadIng--;
                 this.codeNeed = false;
             });
@@ -277,6 +320,12 @@ export default {
 
         onLogin() {
             this.chackServerUrl(true).then(() => {
+                this.email = $A.trim(this.email)
+                this.password = $A.trim(this.password)
+                this.password2 = $A.trim(this.password2)
+                this.code = $A.trim(this.code)
+                this.invite = $A.trim(this.invite)
+                //
                 if (!$A.isEmail(this.email)) {
                     $A.messageWarning("请输入正确的邮箱地址");
                     return;
@@ -303,15 +352,20 @@ export default {
                     },
                 }).then(({data}) => {
                     this.loadIng--;
+                    this.codeNeed = false;
                     $A.setStorage("cacheLoginEmail", this.email)
                     this.$store.dispatch("handleClearCache", data).then(() => {
                         this.goNext1();
-                    }).catch(() => {
+                    }).catch(_ => {
                         this.goNext1();
                     });
                 }).catch(({data, msg}) => {
                     this.loadIng--;
-                    $A.modalError(msg);
+                    if (data.code === 'email') {
+                        $A.modalWarning(msg);
+                    } else {
+                        $A.modalError(msg);
+                    }
                     if (data.code === 'need') {
                         this.reCode();
                         this.codeNeed = true;
@@ -334,7 +388,7 @@ export default {
                     },
                 }).then(() => {
                     this.goNext2();
-                }).catch(() => {
+                }).catch(_ => {
                     this.goNext2();
                 });
             }
@@ -345,7 +399,7 @@ export default {
             if (fromUrl) {
                 window.location.replace(fromUrl);
             } else {
-                this.goForward({path: '/manage/dashboard'}, true);
+                this.goForward({name: 'manage-dashboard'}, true);
             }
         }
     }

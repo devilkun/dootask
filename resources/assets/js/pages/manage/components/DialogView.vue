@@ -44,26 +44,30 @@
         <!--时间/阅读-->
         <div v-if="msgData.created_at" class="dialog-foot">
             <div class="time" :title="msgData.created_at">{{$A.formatTime(msgData.created_at)}}</div>
-            <Poptip
+            <EPopover
                 v-if="msgData.send > 1 || dialogType == 'group'"
+                v-model="popperShow"
+                ref="percent"
                 class="percent"
                 placement="left-end"
-                transfer
                 :width="360"
-                :offset="8"
-                @on-popper-show="popperShow">
-                <div slot="content" class="dialog-wrapper-read-poptip-content">
-                    <ul class="read">
-                        <li class="read-title"><em>{{readList.length}}</em>{{$L('已读')}}</li>
-                        <li v-for="item in readList"><UserAvatar :userid="item.userid" :size="26" showName/></li>
+                :offset="-8">
+                <div class="dialog-wrapper-read-poptip-content">
+                    <ul class="read overlay-y">
+                        <li class="read-title"><em>{{ readList.length }}</em>{{ $L('已读') }}</li>
+                        <li v-for="item in readList">
+                            <UserAvatar :userid="item.userid" :size="26" showName/>
+                        </li>
                     </ul>
-                    <ul class="unread">
-                        <li class="read-title"><em>{{unreadList.length}}</em>{{$L('未读')}}</li>
-                        <li v-for="item in unreadList"><UserAvatar :userid="item.userid" :size="26" showName/></li>
+                    <ul class="unread overlay-y">
+                        <li class="read-title"><em>{{ unreadList.length }}</em>{{ $L('未读') }}</li>
+                        <li v-for="item in unreadList">
+                            <UserAvatar :userid="item.userid" :size="26" showName/>
+                        </li>
                     </ul>
                 </div>
-                <WCircle :percent="msgData.percentage" :size="14"/>
-            </Poptip>
+                <WCircle slot="reference" :percent="msgData.percentage" :size="14"/>
+            </EPopover>
             <Icon v-else-if="msgData.percentage === 100" class="done" type="md-done-all"/>
             <Icon v-else class="done" type="md-checkmark"/>
         </div>
@@ -94,7 +98,8 @@ export default {
 
     data() {
         return {
-            read_list: []
+            popperShow: false,
+            allList: [],
         }
     },
 
@@ -103,14 +108,14 @@ export default {
     },
 
     computed: {
-        ...mapState(['userToken', 'userId']),
+        ...mapState(['userToken', 'userId', 'dialogMsgs']),
 
         readList() {
-            return this.read_list.filter(({read_at}) => read_at)
+            return this.allList.filter(({read_at}) => read_at)
         },
 
         unreadList() {
-            return this.read_list.filter(({read_at}) => !read_at)
+            return this.allList.filter(({read_at}) => !read_at)
         },
 
         showMenu() {
@@ -124,6 +129,22 @@ export default {
                 this.msgRead();
             },
             immediate: true,
+        },
+        popperShow(val) {
+            if (val) {
+                this.$store.dispatch("call", {
+                    url: 'dialog/msg/readlist',
+                    data: {
+                        msg_id: this.msgData.id,
+                    },
+                }).then(({data}) => {
+                    this.allList = data;
+                    setTimeout(this.$refs.percent.updatePopper, 10)
+                }).catch(() => {
+                    this.allList = [];
+                    setTimeout(this.$refs.percent.updatePopper, 10)
+                });
+            }
         }
     },
 
@@ -134,26 +155,13 @@ export default {
             }
             this.msgData._r = true;
             //
-            this.$nextTick(() => {
+            setTimeout(() => {
                 if (!this.$el.offsetParent) {
                     this.msgData._r = false;
                     return
                 }
                 this.$store.dispatch("dialogMsgRead", this.msgData);
-            })
-        },
-
-        popperShow() {
-            this.$store.dispatch("call", {
-                url: 'dialog/msg/readlist',
-                data: {
-                    msg_id: this.msgData.id,
-                },
-            }).then(({data}) => {
-                this.read_list = data;
-            }).catch(() => {
-                this.read_list = [];
-            });
+            }, 50)
         },
 
         textMsg(text) {
@@ -212,14 +220,32 @@ export default {
         },
 
         viewFile() {
+            const {id, dialog_id, msg} = this.msgData;
+            if (['jpg', 'jpeg', 'gif', 'png'].includes(msg.ext)) {
+                const list = $A.cloneJSON(this.dialogMsgs.filter(item => {
+                    return item.dialog_id === dialog_id && item.type === 'file' && ['jpg', 'jpeg', 'gif', 'png'].includes(item.msg.ext);
+                })).sort((a, b) => {
+                    return a.id - b.id;
+                });
+                const index = list.findIndex(item => item.id === id);
+                if (index > -1) {
+                    this.$store.state.previewImageIndex = index;
+                    this.$store.state.previewImageList = list.map(({msg}) => msg.path);
+                } else {
+                    this.$store.state.previewImageIndex = 0;
+                    this.$store.state.previewImageList = [msg.path];
+                }
+                return
+            }
             if (this.$Electron) {
-                this.$Electron.ipcRenderer.send('windowRouter', {
-                    title: `${this.msgData.msg.name} (${$A.bytesToSize(this.msgData.msg.size)})`,
-                    titleFixed: true,
+                this.$Electron.sendMessage('windowRouter', {
                     name: 'file-msg-' + this.msgData.id,
                     path: "/single/file/msg/" + this.msgData.id,
+                    userAgent: "/hideenOfficeTitle/",
                     force: false,
                     config: {
+                        title: `${this.msgData.msg.name} (${$A.bytesToSize(this.msgData.msg.size)})`,
+                        titleFixed: true,
                         parent: null,
                         width: Math.min(window.screen.availWidth, 1440),
                         height: Math.min(window.screen.availHeight, 900),
@@ -236,7 +262,7 @@ export default {
                 content: `${this.msgData.msg.name} (${$A.bytesToSize(this.msgData.msg.size)})`,
                 okText: '立即下载',
                 onOk: () => {
-                    $A.downFile($A.apiUrl(`dialog/msg/download?msg_id=${this.msgData.id}&token=${this.userToken}`))
+                    this.$store.dispatch('downUrl', $A.apiUrl(`dialog/msg/download?msg_id=${this.msgData.id}`))
                 }
             });
         }

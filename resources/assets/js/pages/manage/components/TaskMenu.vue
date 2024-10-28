@@ -2,6 +2,7 @@
     <EDropdown
         ref="dropdown"
         trigger="click"
+        :disabled="disabled"
         :size="size"
         placement="bottom"
         @command="dropTask"
@@ -15,7 +16,7 @@
                 </template>
             </div>
         </slot>
-        <EDropdownMenu slot="dropdown" class="task-menu-more-dropdown">
+        <EDropdownMenu ref="dropdownMenu" slot="dropdown" class="task-menu-more-dropdown">
             <li class="task-menu-more-warp" :class="size">
                 <ul>
                     <EDropdownItem v-if="!flow" class="load-flow" disabled>
@@ -99,6 +100,10 @@ export default {
             type: Boolean,
             default: false
         },
+        disabled: {
+            type: Boolean,
+            default: false
+        },
         size: {
             type: String,
             default: 'small'
@@ -157,39 +162,71 @@ export default {
         },
 
         dropTask(command) {
+            const cacheTask = this.task;
+            const completeTemp = (save) => {
+                if (save) {
+                    this.$store.dispatch("saveTaskCompleteTemp", cacheTask.id)
+                } else {
+                    this.$store.dispatch("forgetTaskCompleteTemp", cacheTask.id)
+                }
+            }
+            // 修改背景色
             if ($A.isJson(command)) {
                 if (command.name) {
-                    // 修改背景色
                     this.updateTask({
                         color: command.color
                     }).catch(() => {})
                 }
                 return;
             }
+            // 修改工作流状态
             if ($A.leftExists(command, 'turn::')) {
-                // 修改工作流状态
                 let flow_item_id = $A.leftDelete(command, 'turn::');
                 if (flow_item_id == this.task.flow_item_id) return;
+                //
+                let currentFlow = this.taskFlowItems.find(({id}) => id == this.flow.flow_item_id) || {};
+                let updateFlow = this.taskFlowItems.find(({id}) => id == flow_item_id) || {};
+                let isComplete = currentFlow.status !== 'end' && updateFlow.status === 'end';
+                let isUnComplete = currentFlow.status === 'end' && updateFlow.status !== 'end';
+                if (this.updateBefore) {
+                    if (isComplete) {
+                        completeTemp(true)
+                    } else if (isUnComplete) {
+                        completeTemp(false)
+                    }
+                }
                 this.updateTask({
                     flow_item_id
-                }).catch(() => {})
+                }).then(() => {
+                    if (isComplete) {
+                        completeTemp(true)
+                    } else if (isUnComplete) {
+                        completeTemp(false)
+                    }
+                }).catch(() => {
+                    if (isComplete) {
+                        completeTemp(false)
+                    } else if (isUnComplete) {
+                        completeTemp(true)
+                    }
+                })
                 return;
             }
-            const cacheTask = this.task;
+            // 其他操作
             switch (command) {
                 case 'complete':
                     if (this.task.complete_at) {
                         return;
                     }
                     if (this.updateBefore) {
-                        this.$store.dispatch("saveTaskCompleteTemp", cacheTask)
+                        completeTemp(true)
                     }
                     this.updateTask({
                         complete_at: $A.formatDate("Y-m-d H:i:s")
                     }).then(() => {
-                        this.$store.dispatch("saveTaskCompleteTemp", cacheTask)
+                        completeTemp(true)
                     }).catch(() => {
-                        this.$store.dispatch("forgetTaskCompleteTemp", cacheTask.id)
+                        completeTemp(false)
                     })
                     break;
 
@@ -198,14 +235,14 @@ export default {
                         return;
                     }
                     if (this.updateBefore) {
-                        this.$store.dispatch("forgetTaskCompleteTemp", cacheTask.id)
+                        completeTemp(false)
                     }
                     this.updateTask({
                         complete_at: false
                     }).then(() => {
-                        this.$store.dispatch("forgetTaskCompleteTemp", cacheTask.id)
+                        completeTemp(false)
                     }).catch(() => {
-                        this.$store.dispatch("saveTaskCompleteTemp", cacheTask)
+                        completeTemp(true)
                     })
                     break;
 
@@ -218,7 +255,9 @@ export default {
 
         visibleChange(visible) {
             if (visible) {
-                this.$store.dispatch("getTaskFlow", this.task.id).catch(() => {})
+                this.$store.dispatch("getTaskFlow", this.task.id)
+                    .then(this.$refs.dropdownMenu.updatePopper)
+                    .catch(this.$refs.dropdownMenu.updatePopper)
             }
         },
 
@@ -248,7 +287,7 @@ export default {
         archivedOrRemoveTask(type) {
             let typeDispatch = 'removeTask';
             let typeName = '删除';
-            let typeData = this.task.id;
+            let typeData = {task_id: this.task.id};
             let typeTask = this.task.parent_id > 0 ? '子任务' : '任务';
             if (type == 'archived') {
                 typeDispatch = 'archivedTask'

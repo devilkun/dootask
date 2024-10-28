@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Config;
 use Redirect;
 use Request;
 use Storage;
+use Validator;
 
 class Base
 {
@@ -60,19 +61,29 @@ class Base
     }
 
     /**
+     * 获取package配置文件
+     * @return array
+     */
+    public static function getPackage()
+    {
+        return Cache::remember("Base::package", now()->addSeconds(10), function () {
+            $file = base_path('package.json');
+            if (file_exists($file)) {
+                $package = json_decode(file_get_contents($file), true);
+                return is_array($package) ? $package : [];
+            }
+            return [];
+        });
+    }
+
+    /**
      * 获取版本号
      * @return string
      */
     public static function getVersion()
     {
-        return Cache::remember("Base::version", now()->addSeconds(10), function () {
-            $file = base_path('package.json');
-            if (file_exists($file)) {
-                $packageArray = json_decode(file_get_contents($file), true);
-                return $packageArray['version'] ?? '1.0.0';
-            }
-            return '1.0.0';
-        });
+        $package = self::getPackage();
+        return $package['version'] ?? '1.0.0';
     }
 
     /**
@@ -342,19 +353,15 @@ class Base
     {
         if (strtolower($charset) == 'utf-8') {
             if (Base::getStrlen($string) <= $length) return $string;
-            $strcut = str_replace(array('&amp;', '&quot;', '&lt;', '&gt;'), array('&', '"', '<', '>'), $string);
-            $strcut = Base::utf8Substr($strcut, $length, $start);
-            $strcut = str_replace(array('&', '"', '<', '>'), array('&amp;', '&quot;', '&lt;', '&gt;'), $strcut);
+            $strcut = Base::utf8Substr($string, $length, $start);
             return $strcut . $dot;
         } else {
             $length = $length * 2;
             if (strlen($string) <= $length) return $string;
-            $string = str_replace(array('&amp;', '&quot;', '&lt;', '&gt;'), array('&', '"', '<', '>'), $string);
             $strcut = '';
             for ($i = 0; $i < $length; $i++) {
                 $strcut .= ord($string[$i]) > 127 ? $string[$i] . $string[++$i] : $string[$i];
             }
-            $strcut = str_replace(array('&', '"', '<', '>'), array('&amp;', '&quot;', '&lt;', '&gt;'), $strcut);
         }
         return $strcut . $dot;
     }
@@ -813,6 +820,31 @@ class Base
     }
 
     /**
+     * 地址后拼接参数
+     * @param $url
+     * @param $parames
+     * @return mixed|string
+     */
+    public static function urlAddparameter($url, $parames)
+    {
+        if ($parames && is_array($parames)) {
+            $array = [];
+            foreach ($parames as $key => $val) {
+                $array[] = $key . "=" . $val;
+            }
+            if ($array) {
+                $query = implode("&", $array);
+                if (str_contains($url, "?")) {
+                    $url .= "&" . $query;
+                } else {
+                    $url .= "?" . $query;
+                }
+            }
+        }
+        return $url;
+    }
+
+    /**
      * 格式化内容图片地址
      * @param $content
      * @return mixed
@@ -964,13 +996,16 @@ class Base
 
     /**
      * 检测邮箱格式
-     * @param string $str 需要检测的字符串
-     * @return int
+     * @param $str
+     * @return bool
      */
     public static function isEmail($str)
     {
-        $RegExp = '/^[a-z0-9][a-z\.0-9-_]+@[a-z0-9_-]+(?:\.[a-z]{0,3}\.[a-z]{0,2}|\.[a-z]{0,3}|\.[a-z]{0,2})$/i';
-        return preg_match($RegExp, $str);
+        if (filter_var($str, FILTER_VALIDATE_EMAIL)) {
+            return true;
+        } else {
+            return false;
+        }
     }
 
     /**
@@ -1186,11 +1221,12 @@ class Base
 
     /**
      * 获取或设置
-     * @param $setname //配置名称
-     * @param bool $array //保存内容
+     * @param $setname          // 配置名称
+     * @param bool $array       // 保存内容
+     * @param false $isUpdate   // 保存内容为更新模式，默认否
      * @return array
      */
-    public static function setting($setname, $array = false)
+    public static function setting($setname, $array = false, $isUpdate = false)
     {
         global $_A;
         if (empty($setname)) {
@@ -1201,15 +1237,19 @@ class Base
         }
         $setting = [];
         $row = Setting::whereName($setname)->first();
-        if (!empty($row)) {
+        if ($row) {
             $setting = Base::string2array($row->setting);
         } else {
             $row = Setting::createInstance(['name' => $setname]);
             $row->save();
         }
         if ($array !== false) {
-            $setting = $array;
-            $row->updateInstance(['setting' => $array]);
+            if ($isUpdate && is_array($array)) {
+                $setting = array_merge($setting, $array);
+            } else {
+                $setting = $array;
+            }
+            $row->updateInstance(['setting' => $setting]);
             $row->save();
         }
         $_A["__static_setting_" . $setname] = $setting;
@@ -1691,24 +1731,46 @@ class Base
      */
     public static function timeDiff($s, $e)
     {
-        $d = $e - $s;
-        if ($d > 86400) {
-            $day = floor($d / 86400);
-            $hour = ceil(($d - ($day * 86400)) / 3600);
-            if ($hour > 0) {
-                return $day . '天' . $hour . '小时';
-            } else {
-                return $day . '天';
-            }
-        } elseif ($d > 3600) {
-            return ceil($d / 3600) . '小时';
-        } elseif ($d > 60) {
-            return ceil($d / 60) . '分钟';
-        } elseif ($d > 1) {
-            return '1分钟内';
-        } else {
-            return '0秒';
+        $time = $e - $s;
+        $days = 0;
+        if ($time >= 86400) { // 如果大于1天
+            $days = (int)($time / 86400);
+            $time = $time % 86400; // 计算天后剩余的毫秒数
         }
+        $hours = 0;
+        if ($time >= 3600) { // 如果大于1小时
+            $hours = (int)($time / 3600);
+            $time = $time % 3600; // 计算小时后剩余的毫秒数
+        }
+        $minutes = ceil($time / 60); // 剩下的毫秒数都算作分
+        $daysStr = $days > 0 ? $days . '天' : '';
+        $hoursStr = ($hours > 0 || ($days > 0 && $minutes > 0)) ? $hours . '时' : '';
+        $minuteStr = ($minutes > 0) ? $minutes . '分' : '';
+        return $daysStr . $hoursStr . $minuteStr;
+    }
+
+    /**
+     * 时间秒数格式化
+     * @param int $time 时间秒数
+     * @return string
+     */
+    public static function timeFormat($time)
+    {
+        $days = 0;
+        if ($time >= 86400) { // 如果大于1天
+            $days = (int)($time / 86400);
+            $time = $time % 86400; // 计算天后剩余的毫秒数
+        }
+        $hours = 0;
+        if ($time >= 3600) { // 如果大于1小时
+            $hours = (int)($time / 3600);
+            $time = $time % 3600; // 计算小时后剩余的毫秒数
+        }
+        $minutes = ceil($time / 60); // 剩下的毫秒数都算作分
+        $daysStr = $days > 0 ? $days . '天' : '';
+        $hoursStr = ($hours > 0 || ($days > 0 && $minutes > 0)) ? $hours . '时' : '';
+        $minuteStr = ($minutes > 0) ? $minutes . '分' : '';
+        return $daysStr . $hoursStr . $minuteStr;
     }
 
     /**
@@ -2257,21 +2319,24 @@ class Base
                 case 'md':
                     $type = ['md'];
                     break;
+                case 'desktop':
+                    $type = ['yml', 'yaml', 'dmg', 'pkg', 'blockmap', 'zip', 'exe', 'msi'];
+                    break;
                 case 'more':
                     $type = [
                         'text', 'md', 'markdown',
                         'drawio',
                         'mind',
                         'docx', 'wps', 'doc', 'xls', 'xlsx', 'ppt', 'pptx',
-                        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'ico', 'raw',
-                        'rar', 'zip', 'jar', '7-zip', 'tar', 'gzip', '7z',
+                        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'ico', 'raw', 'svg',
+                        'rar', 'zip', 'jar', '7-zip', 'tar', 'gzip', '7z', 'gz', 'apk', 'dmg',
                         'tif', 'tiff',
                         'dwg', 'dxf',
                         'ofd',
                         'pdf',
                         'txt',
                         'htaccess', 'htgroups', 'htpasswd', 'conf', 'bat', 'cmd', 'cpp', 'c', 'cc', 'cxx', 'h', 'hh', 'hpp', 'ino', 'cs', 'css',
-                        'dockerfile', 'go', 'html', 'htm', 'xhtml', 'vue', 'we', 'wpy', 'java', 'js', 'jsm', 'jsx', 'json', 'jsp', 'less', 'lua', 'makefile', 'gnumakefile',
+                        'dockerfile', 'go', 'golang', 'html', 'htm', 'xhtml', 'vue', 'we', 'wpy', 'java', 'js', 'jsm', 'jsx', 'json', 'jsp', 'less', 'lua', 'makefile', 'gnumakefile',
                         'ocamlmakefile', 'make', 'mysql', 'nginx', 'ini', 'cfg', 'prefs', 'm', 'mm', 'pl', 'pm', 'p6', 'pl6', 'pm6', 'pgsql', 'php',
                         'inc', 'phtml', 'shtml', 'php3', 'php4', 'php5', 'phps', 'phpt', 'aw', 'ctp', 'module', 'ps1', 'py', 'r', 'rb', 'ru', 'gemspec', 'rake', 'guardfile', 'rakefile',
                         'gemfile', 'rs', 'sass', 'scss', 'sh', 'bash', 'bashrc', 'sql', 'sqlserver', 'swift', 'ts', 'typescript', 'str', 'vbs', 'vb', 'v', 'vh', 'sv', 'svh', 'xml',
@@ -2299,7 +2364,9 @@ class Base
                 $fileSize = 0;
             }
             $scaleName = "";
-            if ($param['fileName']) {
+            if ($param['fileName'] === true) {
+                $fileName = $file->getClientOriginalName();
+            } elseif ($param['fileName']) {
                 $fileName = $param['fileName'];
             } else {
                 if ($param['scale'] && is_array($param['scale'])) {
@@ -2704,16 +2771,19 @@ class Base
     /**
      * 遍历获取文件
      * @param $dir
+     * @param bool $subdirectory    是否遍历子目录
      * @return array
      */
-    public static function readDir($dir)
+    public static function readDir($dir, $subdirectory = true)
     {
         $files = array();
         $dir_list = scandir($dir);
         foreach ($dir_list as $file) {
             if ($file != '..' && $file != '.') {
                 if (is_dir($dir . '/' . $file)) {
-                    $files = array_merge($files, self::readDir($dir . '/' . $file));
+                    if ($subdirectory) {
+                        $files = array_merge($files, self::readDir($dir . '/' . $file, $subdirectory));
+                    }
                 } else {
                     $files[] = $dir . "/" . $file;
                 }
@@ -2941,5 +3011,55 @@ class Base
         }
         $matrix = array_unique($matrix, SORT_REGULAR);
         return array_merge($matrix);
+    }
+
+    /**
+     * 字节转格式
+     * @param $bytes
+     * @return string
+     */
+    public static function readableBytes($bytes)
+    {
+        $i = floor(log($bytes) / log(1024));
+        $sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+        return sprintf('%.02F', $bytes / pow(1024, $i)) * 1 . ' ' . $sizes[$i];
+    }
+
+    /**
+     * 去除emoji表情
+     * @param $str
+     * @return string|string[]|null
+     */
+    public static function filterEmoji($str)
+    {
+        return preg_replace_callback(
+            '/./u',
+            function (array $match) {
+                return strlen($match[0]) >= 4 ? '' : $match[0];
+            },
+            $str);
+    }
+
+    /**
+     * 统一验证器
+     * @param $data
+     * @param $messages
+     */
+    public static function validator($data, $messages) {
+        $rules = [];
+        foreach ($messages as $key => $item) {
+            $keys = explode(".", $key);
+            if (isset($keys[1])) {
+                if (isset($rules[$keys[0]])) {
+                    $rules[$keys[0]] = $rules[$keys[0]] . '|' . $keys[1];
+                } else {
+                    $rules[$keys[0]] = $keys[1];
+                }
+            }
+        }
+        $validator = Validator::make($data, $rules, $messages);
+        if ($validator->fails()) {
+            throw new ApiException($validator->errors()->first());
+        }
     }
 }

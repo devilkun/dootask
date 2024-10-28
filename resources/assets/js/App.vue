@@ -7,16 +7,18 @@
         </transition>
         <Spinner/>
         <RightBottom/>
+        <PreviewImage/>
     </div>
 </template>
 
 <script>
 import Spinner from "./components/Spinner";
 import RightBottom from "./components/RightBottom";
+import PreviewImage from "./components/PreviewImage";
 import {mapState} from "vuex";
 
 export default {
-    components: {RightBottom, Spinner},
+    components: {PreviewImage, RightBottom, Spinner},
 
     data() {
         return {
@@ -179,19 +181,16 @@ export default {
             if (!this.$Electron) {
                 return;
             }
-            const {ipcRenderer} = this.$Electron;
-            ipcRenderer.send('inheritClose');
-            ipcRenderer.on('windowClose', () => {
+            window.__onBeforeUnload = () => {
                 if (this.$Modal.removeLast()) {
-                    return;
+                    return true;
                 }
                 if (this.cacheDrawerOverlay.length > 0) {
                     this.cacheDrawerOverlay[this.cacheDrawerOverlay.length - 1].close();
-                    return;
+                    return true;
                 }
-                ipcRenderer.send('windowHidden');
-            })
-            ipcRenderer.on('dispatch', (event, args) => {
+            }
+            this.$Electron.registerMsgListener('dispatch', args => {
                 if (!$A.isJson(args)) {
                     return;
                 }

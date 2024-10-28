@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\User;
+use App\Models\UserEmailVerification;
 use App\Module\Base;
 use Arr;
 use Cache;
@@ -42,6 +43,7 @@ class UsersController extends AbstractController
         $type = trim(Request::input('type'));
         $email = trim(Request::input('email'));
         $password = trim(Request::input('password'));
+        $isRegVerify = Base::settingFind('emailSetting', 'reg_verify') === 'open';
         if ($type == 'reg') {
             $setting = Base::setting('system');
             if ($setting['reg'] == 'close') {
@@ -53,6 +55,10 @@ class UsersController extends AbstractController
                 }
             }
             $user = User::reg($email, $password);
+            if ($isRegVerify) {
+                UserEmailVerification::userEmailSend($user);
+                return Base::retError('注册成功，请验证邮箱后登录', ['code' => 'email']);
+            }
         } else {
             $needCode = !Base::isError(User::needCode($email));
             if ($needCode) {
@@ -68,7 +74,7 @@ class UsersController extends AbstractController
             $retError = function ($msg) use ($email) {
                 Cache::forever("code::" . $email, "need");
                 $needCode = !Base::isError(User::needCode($email));
-                $needData = [ 'code' => $needCode ? 'need' : 'no' ];
+                $needData = ['code' => $needCode ? 'need' : 'no'];
                 return Base::retError($msg, $needData);
             };
             $user = User::whereEmail($email)->first();
@@ -83,6 +89,10 @@ class UsersController extends AbstractController
                 return $retError('帐号已停用...');
             }
             Cache::forget("code::" . $email);
+            if ($isRegVerify && $user->email_verity === 0) {
+                UserEmailVerification::userEmailSend($user);
+                return Base::retError('您还没有验证邮箱，请先登录邮箱通过验证邮件验证邮箱', ['code' => 'email']);
+            }
         }
         //
         $array = [
@@ -416,9 +426,12 @@ class UsersController extends AbstractController
      * @apiName lists
      *
      * @apiParam {Object} [keys]        搜索条件
+     * - keys.key               邮箱/昵称/职位（赋值后keys.email、keys.nickname、keys.profession失效）
      * - keys.email             邮箱
      * - keys.nickname          昵称
      * - keys.profession        职位
+     * - keys.identity          身份（如：admin、noadmin）
+     * - keys.email_verity      邮箱是否认证（如：yes、no）
      * @apiParam {Number} [page]        当前页，默认:1
      * @apiParam {Number} [pagesize]    每页显示数量，默认:20，最大:50
      *
@@ -434,14 +447,26 @@ class UsersController extends AbstractController
         //
         $keys = Request::input('keys');
         if (is_array($keys)) {
-            if ($keys['email']) {
-                $builder->where("email", "like", "%{$keys['email']}%");
-            }
-            if ($keys['nickname']) {
-                $builder->where("nickname", "like", "%{$keys['nickname']}%");
-            }
-            if ($keys['profession']) {
-                $builder->where("profession", "like", "%{$keys['profession']}%");
+            if ($keys['key']) {
+                if (str_contains($keys['key'], "@")) {
+                    $builder->where("email", "like", "%{$keys['key']}%");
+                } else {
+                    $builder->where(function($query) use ($keys) {
+                        $query->where("email", "like", "%{$keys['key']}%")
+                            ->orWhere("nickname", "like", "%{$keys['key']}%")
+                            ->orWhere("profession", "like", "%{$keys['key']}%");
+                    });
+                }
+            } else {
+                if ($keys['email']) {
+                    $builder->where("email", "like", "%{$keys['email']}%");
+                }
+                if ($keys['nickname']) {
+                    $builder->where("nickname", "like", "%{$keys['nickname']}%");
+                }
+                if ($keys['profession']) {
+                    $builder->where("profession", "like", "%{$keys['profession']}%");
+                }
             }
             if ($keys['identity']) {
                 if (Base::leftExists($keys['identity'], "no")) {
@@ -449,6 +474,11 @@ class UsersController extends AbstractController
                 } else {
                     $builder->where("identity", "like", "%,{$keys['identity']},%");
                 }
+            }
+            if ($keys['email_verity'] === 'yes') {
+                $builder->whereEmailVerity(1);
+            } elseif ($keys['email_verity'] === 'no') {
+                $builder->whereEmailVerity(0);
             }
         }
         $list = $builder->orderByDesc('userid')->paginate(Base::getPaginate(50, 20));
@@ -558,5 +588,53 @@ class UsersController extends AbstractController
         }
         //
         return Base::retSuccess('修改成功', $userInfo);
+    }
+
+    /**
+     * @api {get} api/users/email/verification          13. 邮箱验证
+     *
+     * @apiDescription 不需要token身份
+     * @apiVersion 1.0.0
+     * @apiGroup users
+     * @apiName email__verification
+     *
+     * @apiParam {String} code           验证参数
+     *
+     * @apiSuccess {Number} ret     返回状态码（1正确、0错误）
+     * @apiSuccess {String} msg     返回信息（错误描述）
+     * @apiSuccess {Object} data    返回数据（同"获取我的信息"接口）
+     */
+    public function email__verification()
+    {
+        $data = Request::input();
+        // 表单验证
+        Base::validator($data, [
+            'code.required' => '验证码不能为空',
+        ]);
+        //
+        $res = UserEmailVerification::whereCode($data['code'])->first();
+        if (empty($res)) {
+            return Base::retError('无效连接,请重新注册');
+        }
+
+        // 如果已经校验过
+        if (intval($res->status) === 1)
+            return Base::retError('链接已经使用过', ['code' => 2]);
+
+        $oldTime = Carbon::parse($res->created_at)->timestamp;
+        $time = Base::Time();
+
+        // 30分钟失效
+        if (abs($time - $oldTime) > 1800) {
+            return Base::retError("链接已失效，请重新登录/注册");
+        }
+        UserEmailVerification::whereCode($data['code'])->update([
+            'status' => 1
+        ]);
+        User::whereUserid($res->userid)->update([
+            'email_verity' => 1
+        ]);
+
+        return Base::retSuccess('绑定邮箱成功');
     }
 }

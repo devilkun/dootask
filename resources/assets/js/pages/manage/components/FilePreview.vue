@@ -25,12 +25,12 @@
             <div v-if="contentDetail" class="content-body">
                 <template v-if="file.type=='document'">
                     <MDPreview v-if="contentDetail.type=='md'" :initialValue="contentDetail.content"/>
-                    <TEditor v-else v-model="contentDetail.content" height="100%" readOnly/>
+                    <TEditor v-else :value="contentDetail.content" height="100%" readOnly/>
                 </template>
-                <Drawio v-else-if="file.type=='drawio'" ref="myFlow" v-model="contentDetail" readOnly/>
-                <Minder v-else-if="file.type=='mind'" ref="myMind" v-model="contentDetail" readOnly/>
-                <OnlyOffice v-else-if="['word', 'excel', 'ppt'].includes(file.type)" v-model="contentDetail" :code="code" :documentKey="documentKey" readOnly/>
-                <AceEditor v-else-if="['code', 'txt'].includes(file.type)" v-model="contentDetail.content" :ext="file.ext" readOnly/>
+                <Drawio v-else-if="file.type=='drawio'" ref="myFlow" :value="contentDetail" :title="file.name" readOnly/>
+                <Minder v-else-if="file.type=='mind'" ref="myMind" :value="contentDetail" readOnly/>
+                <AceEditor v-else-if="['code', 'txt'].includes(file.type)" :value="contentDetail" :ext="file.ext" readOnly/>
+                <OnlyOffice v-else-if="['word', 'excel', 'ppt'].includes(file.type)" :value="contentDetail" :code="code" :documentKey="documentKey" readOnly/>
             </div>
         </template>
         <div v-if="contentLoad" class="content-load"><Loading/></div>
@@ -39,7 +39,7 @@
 
 <script>
 import Vue from 'vue'
-import Minder from '../../../components/minder'
+import Minder from '../../../components/Minder'
 Vue.use(Minder)
 
 const MDPreview = () => import('../../../components/MDEditor/preview');

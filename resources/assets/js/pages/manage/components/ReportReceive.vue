@@ -4,10 +4,10 @@
             <ul>
                 <li>
                     <div class="search-label">
-                        {{ $L("汇报人") }}
+                        {{ $L("关键词") }}
                     </div>
                     <div class="search-content">
-                        <Input v-model="username" :placeholder="$L('请输入用户名')"/>
+                        <Input v-model="keys.key" :placeholder="$L('输入关键词搜索')" clearable/>
                     </div>
                 </li>
                 <li>
@@ -16,7 +16,7 @@
                     </div>
                     <div class="search-content">
                         <Select
-                            v-model="reportType"
+                            v-model="keys.type"
                             :placeholder="$L('全部')">
                             <Option v-for="item in reportTypeList" :value="item.value" :key="item.value">{{ item.label }}</Option>
                         </Select>
@@ -28,7 +28,7 @@
                     </div>
                     <div class="search-content">
                         <DatePicker
-                            v-model="createAt"
+                            v-model="keys.created_at"
                             type="daterange"
                             split-panels
                             :placeholder="$L('请选择时间')"/>
@@ -40,35 +40,36 @@
                         placement="right"
                         transfer-class-name="search-button-clear"
                         transfer>
-                        <Button :loading="loadIng > 0" type="primary" icon="ios-search" @click="searchTab">{{$L('搜索')}}</Button>
+                        <Button :loading="loadIng > 0" type="primary" icon="ios-search" @click="onSearch">{{$L('搜索')}}</Button>
                         <div slot="content">
-                            <Button :loading="loadIng > 0" type="text" @click="getLists">{{$L('刷新')}}</Button>
+                            <Button v-if="keyIs" type="text" @click="keyIs=false">{{$L('取消筛选')}}</Button>
+                            <Button v-else :loading="loadIng > 0" type="text" @click="getLists">{{$L('刷新')}}</Button>
                         </div>
                     </Tooltip>
                 </li>
             </ul>
         </div>
 
-        <Table
-            class="tableFill report-row-content"
-            ref="tableRef"
-            :columns="columns" :data="lists"
-            :loading="loadIng > 0"
-            :no-data-text="$L(noDataText)"
-            stripe/>
-        <Page
-            class="page-box report-row-foot"
-            :total="listTotal"
-            :current="listPage"
-            :disabled="loadIng > 0"
-            @on-change="setPage"
-            @on-page-size-change="setPageSize"
-            :page-size-opts="[10,20,30,50,100]"
-            placement="top"
-            show-elevator
-            show-sizer
-            show-total
-            transfer/>
+        <div class="table-page-box">
+            <Table
+                :columns="columns"
+                :data="lists"
+                :loading="loadIng > 0"
+                :no-data-text="$L(noDataText)"
+                stripe/>
+            <Page
+                :total="listTotal"
+                :current="listPage"
+                :page-size="listPageSize"
+                :disabled="loadIng > 0"
+                :simple="windowMax768"
+                :page-size-opts="[10,20,30,50,100]"
+                show-elevator
+                show-sizer
+                show-total
+                @on-change="setPage"
+                @on-page-size-change="setPageSize"/>
+        </div>
     </div>
 </template>
 
@@ -84,24 +85,35 @@ export default {
             lists: [],
             listPage: 1,
             listTotal: 0,
-            listPageSize: 10,
-            noDataText: "",
+            listPageSize: 20,
+            noDataText: "数据加载中.....",
 
-            username: '',
-            reportType: '',
-            createAt: [],
-            reportTypeList: [],
+            keys: {},
+            keyIs: false,
+
+            reportTypeList: [
+                {value: "", label: this.$L('全部')},
+                {value: "weekly", label: this.$L('周报')},
+                {value: "daily", label: this.$L('日报')},
+            ],
         }
     },
     mounted() {
         this.getLists();
     },
     computed: {
-        ...mapState(['userId'])
+        ...mapState(['userId', 'windowMax768'])
+    },
+    watch: {
+        keyIs(v) {
+            if (!v) {
+                this.keys = {}
+                this.setPage(1)
+            }
+        }
     },
     methods: {
         initLanguage() {
-            this.noDataText = this.noDataText || "数据加载中.....";
             this.columns = [{
                 title: this.$L("标题"),
                 key: 'title',
@@ -124,39 +136,41 @@ export default {
                             h('span', row.title)
                         )
                     }
-
                     return h('div', arr)
                 }
             }, {
                 title: this.$L("类型"),
                 key: 'type',
-                align: 'center',
                 sortable: true,
-                maxWidth: 80,
+                width: 90,
             }, {
                 title: this.$L("接收时间"),
                 key: 'receive_time',
                 align: 'center',
                 sortable: true,
-                maxWidth: 180,
+                width: 180,
             }, {
                 title: this.$L("操作"),
                 align: 'center',
-                width: 100,
-                minWidth: 100,
+                width: 90,
+                minWidth: 90,
                 render: (h, {column, row}) => {
                     if (!row.id) {
                         return null;
                     }
-                    const vNodes = [
-                        h('ETooltip', {
-                            props: {content: this.$L('查看'), transfer: true, delay: 600},
-                            style: {position: 'relative'},
-                        }, [h('Icon', {
-                            props: {type: 'md-eye', size: 16},
-                            style: {margin: '0 3px', cursor: 'pointer'},
-                            on: {
-                                click: () => {
+                    return h('TableAction', {
+                        props: {
+                            column,
+                            menu: [
+                                {
+                                    icon: "md-eye",
+                                    action: "view",
+                                }
+                            ]
+                        },
+                        on: {
+                            action: (name) => {
+                                if (name === 'view') {
                                     this.$emit("on-view", row)
                                     const myUser = row.receives_user.find(({userid}) => userid == this.userId)
                                     if (myUser) {
@@ -164,46 +178,39 @@ export default {
                                     }
                                 }
                             }
-                        })])
-                    ];
-                    return h('TableAction', {
-                        props: {
-                            column: column
                         }
-                    }, vNodes);
+                    });
                 },
             }];
-            this.reportTypeList = [
-                {value: "", label: this.$L('全部')},
-                {value: "weekly", label: this.$L('周报')},
-                {value: "daily", label: this.$L('日报')},
-            ]
+        },
+
+        onSearch() {
+            this.listPage = 1;
+            this.getLists();
         },
 
         getLists() {
-            this.loadIng = 1;
+            this.loadIng++;
+            this.keyIs = $A.objImplode(this.keys) != "";
             this.$store.dispatch("call", {
                 url: 'report/receive',
                 data: {
-                    page: this.listPage,
-                    pagesize: this.listPageSize,
-                    username: this.username,
-                    created_at: this.createAt,
-                    type: this.reportType
+                    keys: this.keys,
+                    page: Math.max(this.listPage, 1),
+                    pagesize: Math.max($A.runNum(this.listPageSize), 10),
                 },
-            }).then(({data, msg}) => {
+            }).then(({data}) => {
                 // data 结果数据
                 this.lists = data.data;
                 this.listTotal = data.total;
-                if (this.lists.length <= 0) {
-                    this.noDataText = this.$L("无数据");
-                }
+                this.noDataText = "没有相关的数据";
                 // msg 结果描述
             }).catch(({msg}) => {
                 // msg 错误原因
                 $A.messageError(msg);
+                this.noDataText = '数据加载失败';
             }).finally(() => {
-                this.loadIng = 0;
+                this.loadIng--;
             });
         },
 
@@ -218,14 +225,6 @@ export default {
                 this.getLists();
             }
         },
-
-        searchTab() {
-            this.getLists();
-        },
     }
 }
 </script>
-
-<style scoped>
-
-</style>

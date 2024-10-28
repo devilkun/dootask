@@ -2,10 +2,10 @@
     <div class="report">
         <Tabs v-model="reportTabs">
             <TabPane :label="$L('我的汇报')" name="my">
-                <ReportMy ref="report" v-if="reportTabs === 'my'" @on-view="onView" @on-edit="onEditReport"></ReportMy>
+                <ReportMy ref="report" v-if="reportTabs === 'my'" @on-view="onView" @on-edit="onEditReport"/>
             </TabPane>
             <TabPane :label="tabRebder(reportUnreadNumber)" name="receive">
-                <ReportReceive v-if="reportTabs === 'receive'" @on-view="onView"></ReportReceive>
+                <ReportReceive v-if="reportTabs === 'receive'" @on-view="onView"/>
             </TabPane>
         </Tabs>
         <DrawerOverlay
@@ -13,14 +13,14 @@
             placement="right"
             :size="950"
             transfer>
-            <ReportDetail :data="detailData"/>
+            <ReportDetail v-if="showDetailDrawer" :data="detailData"/>
         </DrawerOverlay>
         <DrawerOverlay
             v-model="showEditDrawer"
             placement="right"
             :size="1000"
             transfer>
-            <ReportEdit :id="reportId" @saveSuccess="saveSuccess"/>
+            <ReportEdit v-if="showEditDrawer" :id="reportId" @saveSuccess="saveSuccess"/>
         </DrawerOverlay>
     </div>
 </template>
@@ -61,6 +61,10 @@ export default {
 
     mounted() {
         this.reportTabs = this.reportType;
+        //
+        if (this.$isMainElectron) {
+            this.$Electron.registerMsgListener('reportSaveSuccess', this.saveSuccess)
+        }
     },
 
     methods: {
@@ -85,14 +89,45 @@ export default {
         },
 
         onView(row) {
-            this.showDetailDrawer = true;
             this.detailData = row;
             this.$emit("on-read");
+            if (this.$Electron) {
+                let config = {
+                    title: row.title,
+                    titleFixed: true,
+                    parent: null,
+                    width: Math.min(window.screen.availWidth, 1440),
+                    height: Math.min(window.screen.availHeight, 900),
+                }
+                this.$Electron.sendMessage('windowRouter', {
+                    name: 'report-' + row.id,
+                    path: "/single/report/detail/" + row.id,
+                    force: false,
+                    config
+                });
+            }else{
+                this.showDetailDrawer = true;
+            }
         },
 
         onEditReport(id) {
-            this.reportId = id;
-            this.showEditDrawer = true;
+            if (this.$Electron) {
+                let config = {
+                    title: this.$L(id > 0 ? '修改报告' : '新增报告'),
+                    parent: null,
+                    width: Math.min(window.screen.availWidth, 1440),
+                    height: Math.min(window.screen.availHeight, 900),
+                }
+                this.$Electron.sendMessage('windowRouter', {
+                    name: 'report-' + id,
+                    path: "/single/report/edit/" + id,
+                    force: false,
+                    config
+                });
+            } else {
+                this.reportId = id;
+                this.showEditDrawer = true;
+            }
         },
 
         saveSuccess() {
@@ -104,7 +139,3 @@ export default {
     }
 }
 </script>
-
-<style scoped>
-
-</style>

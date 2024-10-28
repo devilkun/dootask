@@ -44,6 +44,12 @@
                                         </div>
                                         <div class="taskflow-config-table-block-item">
                                             <div>
+                                                <div class="title">{{$L('验收/测试')}}</div>
+                                                <div class="subtitle">{{$L('只能设置单个状态为验收/测试')}}</div>
+                                            </div>
+                                        </div>
+                                        <div class="taskflow-config-table-block-item">
+                                            <div>
                                                 <div class="title">{{$L('结束状态')}}</div>
                                                 <div class="subtitle">{{$L('该状态下任务自动标记完成')}}</div>
                                             </div>
@@ -113,6 +119,7 @@
                                                 <RadioGroup v-model="item.status">
                                                     <Radio label="start"><span></span></Radio>
                                                     <Radio label="progress"><span></span></Radio>
+                                                    <Radio label="test"><span></span></Radio>
                                                     <Radio label="end"><span></span></Radio>
                                                 </RadioGroup>
                                             </div>
@@ -279,7 +286,7 @@ export default {
                         "id": -10,
                         "name": "待处理",
                         "status": "start",
-                        "turns": [-10, -11, -12, -13],
+                        "turns": [-10, -11, -12, -13, -14],
                         "userids": [],
                         "usertype": 'add',
                         "userlimit": 0,
@@ -288,25 +295,34 @@ export default {
                         "id": -11,
                         "name": "进行中",
                         "status": "progress",
-                        "turns": [-10, -11, -12, -13],
+                        "turns": [-10, -11, -12, -13, -14],
                         "userids": [],
                         "usertype": 'add',
                         "userlimit": 0,
                     },
                     {
                         "id": -12,
-                        "name": "已完成",
-                        "status": "end",
-                        "turns": [-10, -11, -12, -13],
+                        "name": "待测试",
+                        "status": "test",
+                        "turns": [-10, -11, -12, -13, -14],
                         "userids": [],
                         "usertype": 'add',
                         "userlimit": 0,
                     },
                     {
                         "id": -13,
+                        "name": "已完成",
+                        "status": "end",
+                        "turns": [-10, -11, -12, -13, -14],
+                        "userids": [],
+                        "usertype": 'add',
+                        "userlimit": 0,
+                    },
+                    {
+                        "id": -14,
                         "name": "已取消",
                         "status": "end",
-                        "turns": [-10, -11, -12, -13],
+                        "turns": [-10, -11, -12, -13, -14],
                         "userids": [],
                         "usertype": 'add',
                         "userlimit": 0,

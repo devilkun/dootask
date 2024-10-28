@@ -35,7 +35,7 @@ export default {
             params.success = (result, status, xhr) => {
                 if (!$A.isJson(result)) {
                     console.log(result, status, xhr);
-                    reject({data: {}, msg: "Return error"})
+                    reject({ret: -1, data: {}, msg: "Return error"})
                     return;
                 }
                 const {ret, data, msg} = result;
@@ -56,14 +56,14 @@ export default {
                             checkNick: false
                         })).then(resolve).catch(reject);
                     }).catch(() => {
-                        reject({data, msg: $A.L('请设置昵称！')})
+                        reject({ret: -1, data, msg: $A.L('请设置昵称！')})
                     });
                     return;
                 }
                 if (ret === 1) {
                     resolve({data, msg});
                 } else {
-                    reject({data, msg: msg || "Unknown error"})
+                    reject({ret, data, msg: msg || "Unknown error"})
                     //
                     if (ret === -4001) {
                         dispatch("forgetProject", data.project_id);
@@ -74,8 +74,12 @@ export default {
                     }
                 }
             };
-            params.error = () => {
-                reject({data: {}, msg: "System error"})
+            params.error = (xhr, status) => {
+                if (window.navigator.onLine === false || (status === 0 && xhr.readyState === 4)) {
+                    reject({ret: -1, data: {}, msg: $A.L('网络异常，请稍后再试！')})
+                } else {
+                    reject({ret: -1, data: {}, msg: "System error"})
+                }
             };
             //
             if (params.websocket === true || params.ws === true) {
@@ -136,6 +140,35 @@ export default {
     },
 
     /**
+     * 下载文件
+     * @param state
+     * @param data
+     */
+    downUrl({state}, data) {
+        if (!data) {
+            return
+        }
+        let url = data;
+        let params = {
+            token: state.userToken
+        };
+        if ($A.isJson(data)) {
+            url = data.url;
+            params = data.params || {};
+        }
+        url = $A.urlAddParams(url, params);
+        if ($A.Electron) {
+            $A.Electron.request({action: 'openExternal', url}, () => {
+                // 成功
+            }, () => {
+                // 失败
+            });
+        } else {
+            window.open(url)
+        }
+    },
+
+    /**
      * 切换面板变量
      * @param state
      * @param data|{key, project_id}
@@ -144,9 +177,11 @@ export default {
         $A.execMainDispatch("toggleProjectParameter", data)
         //
         let key = data;
+        let value = null;
         let project_id = state.projectId;
         if ($A.isJson(data)) {
             key = data.key;
+            value = data.value;
             project_id = data.project_id;
         }
         if (project_id) {
@@ -157,7 +192,7 @@ export default {
             }
             const cache = state.cacheProjectParameter[index];
             if (!$A.isJson(key)) {
-                key = {[key]: !cache[key]};
+                key = {[key]: value || !cache[key]};
             }
             state.cacheProjectParameter.splice(index, 1, Object.assign(cache, key))
             setTimeout(() => {
@@ -201,7 +236,7 @@ export default {
      */
     getBasicData({dispatch}) {
         dispatch("getProjects").catch(() => {});
-        dispatch("getDialogs");
+        dispatch("getDialogs").catch(() => {});
         dispatch("getTaskForDashboard");
     },
 
@@ -242,7 +277,6 @@ export default {
             state.userIsAdmin = $A.inArray('admin', userInfo.identity);
             $A.setStorage("userInfo", state.userInfo);
             dispatch("getBasicData");
-            dispatch("websocketConnection");
             resolve()
         });
     },
@@ -433,6 +467,7 @@ export default {
                 $A.setStorage("cacheServerUrl", state.cacheServerUrl);
                 $A.setStorage("cacheLoginEmail", cacheLoginEmail);
                 $A.setStorage("cacheThemeMode", cacheThemeMode);
+                $A.setStorage("cacheTaskBrowse", state.cacheTaskBrowse);
                 dispatch("saveUserInfo", $A.isJson(userInfo) ? userInfo : state.userInfo);
                 //
                 resolve()
@@ -611,7 +646,7 @@ export default {
             if (project) {
                 $A.goForward({path: '/manage/project/' + project.id});
             } else {
-                $A.goForward({path: '/manage/dashboard'});
+                $A.goForward({name: 'manage-dashboard'});
             }
         }
         setTimeout(() => {
@@ -667,7 +702,9 @@ export default {
                     project_id,
                 },
             }).then(result => {
-                state.projectLoad--;
+                setTimeout(() => {
+                    state.projectLoad--;
+                }, 10)
                 dispatch("saveProject", result.data);
                 resolve(result)
             }).catch(e => {
@@ -849,12 +886,12 @@ export default {
                 // 判断只有1列的时候默认版面为表格模式
                 if (state.cacheColumns.filter(item => item.project_id == project_id).length === 1) {
                     const cache = state.cacheProjectParameter.find(item => item.project_id == project_id) || {};
-                    if (typeof cache.cardInit === "undefined" || cache.cardInit === false) {
+                    if (typeof cache.menuInit === "undefined" || cache.menuInit === false) {
                         dispatch("toggleProjectParameter", {
                             project_id,
                             key: {
-                                card: false,
-                                cardInit: true,
+                                menuInit: true,
+                                menuType: 'table',
                             }
                         });
                     }
@@ -991,6 +1028,13 @@ export default {
                 project_ids.push(state.cacheTasks[index].project_id)
                 state.cacheTasks.splice(index, 1);
             }
+            state.cacheTasks.filter(task => task.parent_id == id).some(childTask => {
+                let cIndex = state.cacheTasks.findIndex(task => task.id == childTask.id);
+                if (cIndex > -1) {
+                    project_ids.push(childTask.project_id)
+                    state.cacheTasks.splice(cIndex, 1);
+                }
+            })
         })
         Array.from(new Set(parent_ids)).some(id => dispatch("getTaskOne", id).catch(() => {}))
         Array.from(new Set(project_ids)).some(id => dispatch("getProjectOne", id).catch(() => {}))
@@ -1116,23 +1160,25 @@ export default {
         state.cacheLoading["loadDashboardTasks"] = true;
         //
         const time = $A.Time()
-        const {today, overdue} = getters.dashboardTask;
+        const {today, overdue,all} = getters.dashboardTask;
         const currentIds = today.map(({id}) => id)
         currentIds.push(...overdue.map(({id}) => id))
+        currentIds.push(...all.map(({id}) => id))
         //
-        let loadIng = 2;
+        let loadIng = 3;
         let call = () => {
             if (loadIng <= 0) {
                 state.cacheLoading["loadDashboardTasks"] = false;
                 //
-                const {today, overdue} = getters.dashboardTask;
+                const {today, overdue,all} = getters.dashboardTask;
                 const newIds = today.filter(task => task._time >= time).map(({id}) => id)
                 newIds.push(...overdue.filter(task => task._time >= time).map(({id}) => id))
+                newIds.push(...all.filter(task => task._time >= time).map(({id}) => id))
                 dispatch("forgetTask", currentIds.filter(v => newIds.indexOf(v) == -1))
                 return;
             }
             loadIng--;
-            if (loadIng == 1) {
+            if (loadIng == 2) {
                 // 获取今日任务
                 dispatch("getTasks", {
                     complete: "no",
@@ -1141,11 +1187,16 @@ export default {
                         $A.formatDate("Y-m-d 23:59:59")
                     ],
                 }).then(call).catch(call)
-            } else if (loadIng == 0) {
+            } else if (loadIng == 1) {
                 // 获取过期任务
                 dispatch("getTasks", {
                     complete: "no",
                     time_before: $A.formatDate("Y-m-d H:i:s"),
+                }).then(call).catch(call)
+            } else if((loadIng == 0)) {
+                // 获取待处理任务
+                dispatch("getTasks", {
+                    complete: "no",
                 }).then(call).catch(call)
             }
         }
@@ -1211,29 +1262,27 @@ export default {
      * 删除任务
      * @param state
      * @param dispatch
-     * @param task_id
+     * @param data
      * @returns {Promise<unknown>}
      */
-    removeTask({state, dispatch}, task_id) {
+    removeTask({state, dispatch}, data) {
         return new Promise(function (resolve, reject) {
-            if ($A.runNum(task_id) === 0) {
+            if ($A.runNum(data.task_id) === 0) {
                 reject({msg: 'Parameter error'});
                 return;
             }
-            dispatch("taskLoadStart", task_id)
+            dispatch("taskLoadStart", data.task_id)
             dispatch("call", {
                 url: 'project/task/remove',
-                data: {
-                    task_id: task_id,
-                },
+                data,
             }).then(result => {
-                dispatch("forgetTask", task_id)
-                dispatch("taskLoadEnd", task_id)
+                dispatch("forgetTask", data.task_id)
+                dispatch("taskLoadEnd", data.task_id)
                 resolve(result)
             }).catch(e => {
                 console.warn(e);
-                dispatch("getTaskOne", task_id).catch(() => {})
-                dispatch("taskLoadEnd", task_id)
+                dispatch("getTaskOne", data.task_id).catch(() => {})
+                dispatch("taskLoadEnd", data.task_id)
                 reject(e)
             });
         });
@@ -1288,15 +1337,33 @@ export default {
                 task_id,
             },
         }).then(result => {
-            let index = state.taskContents.findIndex(({id}) => id == result.data.id)
-            if (index > -1) {
-                state.taskContents.splice(index, 1, result.data)
-            } else {
-                state.taskContents.push(result.data)
-            }
+            dispatch("saveTaskContent", result.data)
         }).catch(e => {
             console.warn(e);
         });
+    },
+
+    /**
+     * 更新任务详情
+     * @param state
+     * @param dispatch
+     * @param data
+     */
+    saveTaskContent({state, dispatch}, data) {
+        $A.execMainDispatch("saveTaskContent", data)
+        //
+        if ($A.isArray(data)) {
+            data.forEach(item => {
+                dispatch("saveTaskContent", item)
+            });
+        } else if ($A.isJson(data)) {
+            let index = state.taskContents.findIndex(({task_id}) => task_id == data.task_id);
+            if (index > -1) {
+                state.taskContents.splice(index, 1, Object.assign({}, state.taskContents[index], data));
+            } else {
+                state.taskContents.push(data);
+            }
+        }
     },
 
     /**
@@ -1371,7 +1438,8 @@ export default {
             }).then(() => {
                 dispatch("getTaskContent", task_id);
                 dispatch("getTaskFiles", task_id);
-                dispatch("getTaskForParent", task_id).catch(() => {})
+                dispatch("getTaskForParent", task_id).catch(() => {});
+                dispatch("saveTaskBrowse", task_id);
             }).catch(({msg}) => {
                 $A.modalWarning({
                     content: msg,
@@ -1453,7 +1521,7 @@ export default {
      */
     taskUpdate({state, dispatch}, data) {
         return new Promise(function (resolve, reject) {
-            dispatch("taskBeforeUpdate", data).then(post => {
+            dispatch("taskBeforeUpdate", data).then(({confirm, post}) => {
                 dispatch("taskLoadStart", post.task_id)
                 dispatch("call", {
                     url: 'project/task/update',
@@ -1467,7 +1535,7 @@ export default {
                     console.warn(e);
                     dispatch("taskLoadEnd", post.task_id)
                     dispatch("getTaskOne", post.task_id).catch(() => {})
-                    reject(e)
+                    setTimeout(() => { reject(e) }, confirm === true ? 301 : 0)
                 });
             }).catch(reject)
         });
@@ -1554,14 +1622,20 @@ export default {
             }
             //
             if (content === null) {
-                resolve(post);
+                resolve({
+                    confirm: false,
+                    post
+                });
                 return
             }
             $A.modalConfirm({
                 title,
                 content,
                 onOk: () => {
-                    resolve(post);
+                    resolve({
+                        confirm: true,
+                        post
+                    });
                 },
                 onCancel: () => {
                     reject({msg: false})
@@ -1621,6 +1695,7 @@ export default {
                     task_id: task_id
                 },
             }).then(result => {
+                let task = state.cacheTasks.find(({id}) => id == task_id)
                 let {data} = result
                 data.turns.some(item => {
                     let index = state.taskFlowItems.findIndex(({id}) => id == item.id);
@@ -1628,6 +1703,16 @@ export default {
                         state.taskFlowItems.splice(index, 1, item);
                     } else {
                         state.taskFlowItems.push(item);
+                    }
+                    if (task
+                        && task.flow_item_id == item.id
+                        && task.flow_item_name != item.name) {
+                        state.cacheTasks.filter(({flow_item_id})=> flow_item_id == item.id).some(task => {
+                            dispatch("saveTask", {
+                                id: task.id,
+                                flow_item_name: `${item.status}|${item.name}`,
+                            })
+                        })
                     }
                 })
                 //
@@ -1689,16 +1774,11 @@ export default {
     /**
      * 保存完成任务临时表
      * @param state
-     * @param data
+     * @param task_id
      */
-    saveTaskCompleteTemp({state}, data) {
-        if ($A.isJson(data)) {
-            let index = state.taskCompleteTemps.findIndex(({id}) => id == data.id);
-            if (index > -1) {
-                state.taskCompleteTemps.splice(index, 1, data);
-            } else {
-                state.taskCompleteTemps.push(data);
-            }
+    saveTaskCompleteTemp({state}, task_id) {
+        if (/^\d+$/.test(task_id) && !state.taskCompleteTemps.includes(task_id)) {
+            state.taskCompleteTemps.push(task_id)
         }
     },
 
@@ -1710,12 +1790,31 @@ export default {
     forgetTaskCompleteTemp({state}, task_id) {
         if (task_id === true) {
             state.taskCompleteTemps = [];
-            return;
+        } else if (/^\d+$/.test(task_id)) {
+            state.taskCompleteTemps = state.taskCompleteTemps.filter(id => id != task_id);
         }
-        let index = state.taskCompleteTemps.findIndex(({id}) => id == task_id);
+    },
+
+    /**
+     * 保存任务浏览记录
+     * @param state
+     * @param task_id
+     */
+    saveTaskBrowse({state}, task_id) {
+        let index = state.cacheTaskBrowse.findIndex(({id}) => id == task_id)
         if (index > -1) {
-            state.taskCompleteTemps.splice(index, 1);
+            state.cacheTaskBrowse.splice(index, 1)
         }
+        state.cacheTaskBrowse.unshift({
+            id: task_id,
+            userid: state.userId
+        })
+        if (state.cacheTaskBrowse.length > 200) {
+            state.cacheTaskBrowse.splice(200);
+        }
+        setTimeout(() => {
+            $A.setStorage("cacheTaskBrowse", state.cacheTaskBrowse);
+        })
     },
 
     /** *****************************************************************************************/
@@ -1773,18 +1872,24 @@ export default {
      * 获取会话列表
      * @param state
      * @param dispatch
+     * @returns {Promise<unknown>}
      */
     getDialogs({state, dispatch}) {
-        if (state.userId === 0) {
-            state.cacheDialogs = [];
-            return;
-        }
-        dispatch("call", {
-            url: 'dialog/lists',
-        }).then(result => {
-            dispatch("saveDialog", result.data.data);
-        }).catch(e => {
-            console.warn(e);
+        return new Promise(function (resolve, reject) {
+            if (state.userId === 0) {
+                state.cacheDialogs = [];
+                reject({msg: 'Parameter error'});
+                return;
+            }
+            dispatch("call", {
+                url: 'dialog/lists',
+            }).then(result => {
+                dispatch("saveDialog", result.data.data);
+                resolve(result)
+            }).catch(e => {
+                console.warn(e);
+                reject(e)
+            });
         });
     },
 
@@ -1919,42 +2024,52 @@ export default {
      * @param state
      * @param dispatch
      * @param dialog_id
+     * @returns {Promise<unknown>}
      */
     getDialogMsgs({state, dispatch}, dialog_id) {
-        let dialog = state.cacheDialogs.find(({id}) => id == dialog_id);
-        if (!dialog) {
-            dialog = {
-                id: dialog_id,
-            };
-            state.cacheDialogs.push(dialog);
-        }
-        if (dialog.loading) {
-            return;
-        }
-        dialog.loading = true;
-        dialog.currentPage = 1;
-        dialog.hasMorePages = false;
-        //
-        dispatch("call", {
-            url: 'dialog/msg/lists',
-            data: {
-                dialog_id: dialog_id,
-                page: dialog.currentPage
-            },
-        }).then(result => {
-            dialog.loading = false;
-            dialog.currentPage = result.data.current_page;
-            dialog.hasMorePages = !!result.data.next_page_url;
-            dispatch("saveDialog", dialog);
+        return new Promise(resolve => {
+            if (!dialog_id) {
+                resolve()
+                return;
+            }
+            let dialog = state.cacheDialogs.find(({id}) => id == dialog_id);
+            if (!dialog) {
+                dialog = {
+                    id: dialog_id,
+                };
+                state.cacheDialogs.push(dialog);
+            }
+            if (dialog.loading) {
+                resolve()
+                return;
+            }
+            dialog.loading = true;
+            dialog.currentPage = 1;
+            dialog.hasMorePages = false;
             //
-            const ids = result.data.data.map(({id}) => id)
-            state.dialogMsgs = state.dialogMsgs.filter((item) => item.dialog_id != dialog_id || ids.includes(item.id));
-            //
-            dispatch("saveDialog", result.data.dialog);
-            dispatch("saveDialogMsg", result.data.data);
-        }).catch(e => {
-            console.warn(e);
-            dialog.loading = false;
+            dispatch("call", {
+                url: 'dialog/msg/lists',
+                data: {
+                    dialog_id: dialog_id,
+                    page: dialog.currentPage
+                },
+            }).then(result => {
+                dialog.loading = false;
+                dialog.currentPage = result.data.current_page;
+                dialog.hasMorePages = !!result.data.next_page_url;
+                dispatch("saveDialog", dialog);
+                //
+                const ids = result.data.data.map(({id}) => id)
+                state.dialogMsgs = state.dialogMsgs.filter((item) => item.dialog_id != dialog_id || ids.includes(item.id));
+                //
+                dispatch("saveDialog", result.data.dialog);
+                dispatch("saveDialogMsg", result.data.data);
+                resolve()
+            }).catch(e => {
+                console.warn(e);
+                dialog.loading = false;
+                resolve()
+            });
         });
     },
 
@@ -2016,6 +2131,8 @@ export default {
         let dialog = state.cacheDialogs.find(({id}) => id == data.dialog_id);
         if (dialog && dialog.unread > 0) {
             dialog.unread--
+            dialog.mark_unread = 0
+            dispatch("saveDialog", dialog)
         }
         //
         state.wsReadWaitList.push(data.id);
@@ -2028,7 +2145,7 @@ export default {
                 }
             });
             state.wsReadWaitList = [];
-        }, 20);
+        }, 50);
     },
 
     /**
@@ -2052,6 +2169,9 @@ export default {
         url = url.replace("http://", "ws://");
         url += "?action=web&token=" + state.userToken;
         //
+        const wsRandom = $A.randomString(16);
+        state.wsRandom = wsRandom;
+        //
         state.ws = new WebSocket(url);
         state.ws.onopen = (e) => {
             // console.log("[WS] Open", $A.formatDate())
@@ -2063,7 +2183,7 @@ export default {
             //
             clearTimeout(state.wsTimeout);
             state.wsTimeout = setTimeout(() => {
-                dispatch('websocketConnection');
+                wsRandom === state.wsRandom && dispatch('websocketConnection');
             }, 3000);
         };
         state.ws.onerror = (e) => {
@@ -2072,7 +2192,7 @@ export default {
             //
             clearTimeout(state.wsTimeout);
             state.wsTimeout = setTimeout(() => {
-                dispatch('websocketConnection');
+                wsRandom === state.wsRandom && dispatch('websocketConnection');
             }, 3000);
         };
         state.ws.onmessage = (e) => {
@@ -2130,7 +2250,10 @@ export default {
                                                     dialog_id: data.dialog_id
                                                 }).then(result => {
                                                     dialog.unread = result.data.unread
+                                                    dispatch("saveDialog", dialog)
                                                 }).catch(() => {});
+                                            } else {
+                                                dispatch("saveDialog", dialog)
                                             }
                                         }
                                         break;
@@ -2142,12 +2265,14 @@ export default {
                                             if (mode === "chat") {
                                                 return;
                                             }
-                                            let dialog = state.cacheDialogs.find(({id}) => id == data.dialog_id);
-                                            // 更新对话列表
-                                            if (dialog && state.cacheUnreads[data.id] === undefined) {
-                                                // 新增未读数
-                                                state.cacheUnreads[data.id] = true;
-                                                dialog.unread++;
+                                            if (data.userid !== state.userId) {
+                                                // 更新对话新增未读数
+                                                let dialog = state.cacheDialogs.find(({id}) => id == data.dialog_id);
+                                                if (dialog && state.cacheUnreads[data.id] === undefined) {
+                                                    state.cacheUnreads[data.id] = true;
+                                                    dialog.unread++;
+                                                    dispatch("saveDialog", dialog)
+                                                }
                                             }
                                             Store.set('dialogMsgPush', data);
                                         }
@@ -2155,6 +2280,12 @@ export default {
                                         dispatch("saveDialogMsg", data)
                                         // 更新最后消息
                                         dispatch("updateDialogLastMsg", data);
+                                        break;
+                                    case 'readed':
+                                        // 已读回执
+                                        if (state.dialogMsgs.find(({id}) => id == data.id)) {
+                                            dispatch("saveDialogMsg", data)
+                                        }
                                         break;
                                 }
                             })(msgDetail);
@@ -2212,6 +2343,7 @@ export default {
                                 const {action, data} = msg;
                                 switch (action) {
                                     case 'add':
+                                    case 'restore':
                                         dispatch("addTaskSuccess", data)
                                         break;
                                     case 'update':
@@ -2323,6 +2455,9 @@ export default {
      * @param state
      */
     websocketClose({state}) {
-        state.ws && state.ws.close();
-    },
+        if (state.ws) {
+            state.ws.close();
+            state.ws = null;
+        }
+    }
 }

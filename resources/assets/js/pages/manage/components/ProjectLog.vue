@@ -63,6 +63,7 @@ export default {
 
             lists: [],
             listPage: 1,
+            listPageSize: 20,
             hasMorePages: false,
             totalNum: -1,
         }
@@ -107,7 +108,7 @@ export default {
                     project_id: this.projectId,
                     task_id: this.taskId,
                     page: Math.max(this.listPage, 1),
-                    pagesize: this.pagesize,
+                    pagesize: Math.max($A.runNum(this.listPageSize), 10),
                 }
             }).then(({data}) => {
                 this.loadIng--;
@@ -172,9 +173,11 @@ export default {
                     let [before, now] = record.change
                     vNode.push(h('span', ': '))
                     if (before && before != now) {
-                        vNode.push(h('span', `${before || '-'} => ${now || '-'}`))
+                        vNode.push(h('span', {class:'change-value'}, `${before || '-'}`))
+                        vNode.push(h('span', ' => '))
+                        vNode.push(h('span', {class:'change-value'}, `${now || '-'}`))
                     } else {
-                        vNode.push(h('span', now || '-'))
+                        vNode.push(h('span', {class:'change-value'}, now || '-'))
                     }
                 }
                 if (record.userid) {
